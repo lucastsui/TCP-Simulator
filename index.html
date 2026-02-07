@@ -199,7 +199,7 @@
             <button id="btnClose" class="btn">Close</button>
           </div>
           <div class="row" style="margin-top:8px">
-            <span class="pill">Speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1" /><output id="speedOut">1x</output></span>
+            <span class="pill">Speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="4" /><output id="speedOut">4x</output></span>
           </div>
           <div class="tiny" style="margin-top:6px">
             Keyboard: <span class="kbd">Space</span> play/pause, <span class="kbd">←/→</span> step, <span class="kbd">+</span>/<span class="kbd">-</span> speed
@@ -224,10 +224,10 @@
             <label>Dst Port<input id="dstPort" type="number" min="1" max="65535" value="80" /></label>
           </div>
           <label>Payload Bytes
-            <input id="payload" type="range" min="1024" max="10485760" step="1024" value="32768" />
+            <input id="payload" type="range" min="1024" max="10485760" step="1024" value="10485760" />
           </label>
           <div class="row">
-            <output id="payloadOut" class="mono">32768 B</output>
+            <output id="payloadOut" class="mono">10485760 B</output>
             <span class="tiny">Queue source for sender backlog bar</span>
           </div>
           <div class="grid2">
