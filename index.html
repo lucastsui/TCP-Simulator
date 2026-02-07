@@ -98,6 +98,23 @@
         border-radius: 6px;
         padding: 6px;
       }
+      .rate-box {
+        border: 1px solid #27364f;
+        background: #0b1320;
+        border-radius: 6px;
+        padding: 6px;
+      }
+      .rate-box canvas {
+        width: 100%;
+        height: 120px;
+        display: block;
+        background: #08111d;
+        border: 1px solid #25374f;
+        border-radius: 4px;
+      }
+      .rate-box .status {
+        margin-top: 6px;
+      }
       .scene-wrap {
         position: relative;
         overflow: hidden;
@@ -106,25 +123,6 @@
         width: 100%;
         height: 100%;
         display: block;
-      }
-      .hud {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 330px;
-        border: 1px solid #2b3b56;
-        background: #0f1828cc;
-        border-radius: 10px;
-        padding: 8px;
-        backdrop-filter: blur(2px);
-      }
-      .hud h3 {
-        margin: 0 0 5px;
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .hud .line {
-        margin: 2px 0;
       }
       details.math {
         position: absolute;
@@ -263,19 +261,12 @@
 
         <div class="section">
           <h2>Fault Injection (Freeform)</h2>
-          <div class="tiny">Comma-separated indexes, no cap. Applies to sender data segment index.</div>
           <label>Segment Loss Probability
             <input id="lossProb" type="range" min="0" max="100" step="1" value="0" />
           </label>
           <div class="row">
             <output id="lossProbOut" class="mono">0%</output>
             <span class="tiny">Random in-transit loss for data segments</span>
-          </div>
-          <div class="grid2">
-            <label>Drop seg #<input id="dropIdx" type="text" placeholder="e.g. 3,7,10" /></label>
-            <label>Reorder N<input id="reorderIdx" type="text" placeholder="e.g. 2,9" /></label>
-            <label>Duplicate seg #<input id="dupIdx" type="text" placeholder="e.g. 4,8" /></label>
-            <label>Corrupt frame #<input id="corruptIdx" type="text" placeholder="e.g. 5" /></label>
           </div>
           <div class="grid2">
             <label><input id="jitterOn" type="checkbox" /> Variable delay/jitter</label>
@@ -306,6 +297,18 @@
           </div>
           <div style="margin-top:6px" class="tiny">SACK scoreboard</div>
           <div id="scoreboard" class="panel-scroll mono"></div>
+        </div>
+        <div class="section">
+          <h2>Receiver Goodput</h2>
+          <div class="rate-box">
+            <canvas id="rateCanvas" width="360" height="120"></canvas>
+              <div class="status">
+              <div class="k">goodput</div><div id="rateGoodput" class="mono">0 b/min</div>
+              <div class="k">peak</div><div id="ratePeak" class="mono">0 b/min</div>
+              <div class="k">window</div><div id="rateWindow" class="mono">1.0s</div>
+              <div class="k">scale</div><div id="rateScale" class="mono">0 b/min</div>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -364,16 +367,6 @@
           <g id="packetLayer"></g>
         </svg>
 
-        <div class="hud">
-          <h3>Simulation HUD</h3>
-          <div id="hudTiming" class="line tiny"></div>
-          <div id="hudPacing" class="line tiny"></div>
-          <div id="hudModel" class="line tiny"></div>
-          <div id="hudConn" class="line tiny"></div>
-          <div id="hudBuffers" class="line tiny"></div>
-          <div id="hudMsg" class="line mono">Ready</div>
-        </div>
-
         <details class="math">
           <summary>Show checksum math</summary>
           <div id="mathPanel"></div>
@@ -394,15 +387,7 @@
       const toBytes16 = (v) => [((v >>> 8) & 0xff), (v & 0xff)];
       const toBytes32 = (v) => [((v >>> 24) & 0xff), ((v >>> 16) & 0xff), ((v >>> 8) & 0xff), (v & 0xff)];
       const bytesFmt = (n) => (n >= 1048576 ? (n / 1048576).toFixed(2) + " MB" : n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B");
-
-      function parseIndexList(s) {
-        if (!s.trim()) return new Set();
-        return new Set(
-          s.split(",")
-            .map((x) => parseInt(x.trim(), 10))
-            .filter((n) => Number.isFinite(n) && n > 0)
-        );
-      }
+      const bitsFmt = (n) => (n >= 1e9 ? (n / 1e9).toFixed(2) + " Gb" : n >= 1e6 ? (n / 1e6).toFixed(2) + " Mb" : n >= 1e3 ? (n / 1e3).toFixed(1) + " Kb" : Math.round(n) + " b");
 
       function ip4ToBytes(ip) {
         return ip.split(".").map((x) => parseInt(x, 10) & 0xff);
@@ -463,12 +448,6 @@
       const ui = {
         scene: document.getElementById("scene"),
         packetLayer: document.getElementById("packetLayer"),
-        hudMsg: document.getElementById("hudMsg"),
-        hudTiming: document.getElementById("hudTiming"),
-        hudPacing: document.getElementById("hudPacing"),
-        hudModel: document.getElementById("hudModel"),
-        hudConn: document.getElementById("hudConn"),
-        hudBuffers: document.getElementById("hudBuffers"),
         mathPanel: document.getElementById("mathPanel"),
         speed: document.getElementById("speed"),
         speedOut: document.getElementById("speedOut"),
@@ -495,10 +474,6 @@
         rwnd: document.getElementById("rwnd"),
         senderBufCap: document.getElementById("senderBufCap"),
         receiverBufCap: document.getElementById("receiverBufCap"),
-        dropIdx: document.getElementById("dropIdx"),
-        reorderIdx: document.getElementById("reorderIdx"),
-        dupIdx: document.getElementById("dupIdx"),
-        corruptIdx: document.getElementById("corruptIdx"),
         lossProb: document.getElementById("lossProb"),
         lossProbOut: document.getElementById("lossProbOut"),
         jitterOn: document.getElementById("jitterOn"),
@@ -537,6 +512,11 @@
         stDupAck: document.getElementById("stDupAck"),
         stFr: document.getElementById("stFr"),
         scoreboard: document.getElementById("scoreboard"),
+        rateCanvas: document.getElementById("rateCanvas"),
+        rateGoodput: document.getElementById("rateGoodput"),
+        ratePeak: document.getElementById("ratePeak"),
+        rateWindow: document.getElementById("rateWindow"),
+        rateScale: document.getElementById("rateScale"),
       };
 
       // -------------------- Simulation State --------------------
@@ -583,13 +563,16 @@
         deliveryCompleteLogged: false,
         senderIntentOverride: null,
         receiverIntentOverride: null,
-        faults: {
-          drop: new Set(),
-          reorder: new Set(),
-          dup: new Set(),
-          corrupt: new Set(),
-        },
         nextColorLane: 0,
+        nextTraceId: 0,
+        rate: {
+          events: [],
+          samples: [],
+          lastSampleClock: 0,
+          windowMs: 1000,
+          sampleIntervalMs: 200,
+          peakBps: 0,
+        },
       };
 
       // -------------------- Config / Derived --------------------
@@ -1028,19 +1011,18 @@
         sim.scoreboard = [];
         sim.eventLogLines = [];
         sim.deliveryCompleteLogged = false;
-        sim.faults.drop = parseIndexList(ui.dropIdx.value);
-        sim.faults.reorder = parseIndexList(ui.reorderIdx.value);
-        sim.faults.dup = parseIndexList(ui.dupIdx.value);
-        sim.faults.corrupt = parseIndexList(ui.corruptIdx.value);
+        sim.rate.events = [];
+        sim.rate.samples = [];
+        sim.rate.lastSampleClock = 0;
+        sim.rate.peakBps = 0;
         sim.nextColorLane = 0;
         ui.packetLayer.innerHTML = "";
         ui.mathPanel.innerHTML = "";
         ui.eventLogPanel.textContent = "";
-        ui.hudMsg.textContent = "Ready";
         updateDerivedUi();
         updateBars();
         updateStatus();
-        updateHudInfo();
+        updateGoodputChart();
       }
 
       function updateDerivedUi() {
@@ -1071,10 +1053,6 @@
           pshCoalesce: "Allow application writes to coalesce before send",
           keepAlive: "Send periodic keep-alive probes when idle",
           persist: "Probe zero-window peer with exponential backoff",
-          dropIdx: "Comma-separated data segment indexes to drop",
-          reorderIdx: "Comma-separated segment indexes delayed to force reordering",
-          dupIdx: "Comma-separated segment indexes to duplicate",
-          corruptIdx: "Comma-separated segment indexes to corrupt for bad FCS",
           lossProb: "Probability that each outbound data segment is lost in transit",
           jitterOn: "Enable variable one-way delay",
           jitterMs: "Maximum random extra delay in ms",
@@ -1149,27 +1127,112 @@
           : "(empty)";
       }
 
-      function updateHudInfo() {
-        const speed = speedValue();
-        const oneWayRealSec = sim.oneWayMs / Math.max(0.01, speed) / 1000;
-        const rttRealSec = (sim.baseRttMs / Math.max(0.01, speed)) / 1000;
-        const eff = effectiveMss();
-        const flight = flightBytes();
-        const cwndBytes = sim.sender.cwndMss * eff;
-        const sendBudget = Math.max(0, Math.min(cwndBytes, sim.receiver.wnd) - flight);
-        const senderBufUsed = senderBufferOccupancyBytes();
-        const receiverBufUsed = receiverBufferOccupancyBytes();
-        const faultCount = sim.faults.drop.size + sim.faults.reorder.size + sim.faults.dup.size + sim.faults.corrupt.size;
+      function recordReceiverConsumed(bytes) {
+        if (bytes <= 0) return;
+        sim.rate.events.push({ t: sim.clock, bytes });
+      }
 
-        ui.hudTiming.textContent = `Speed ${speed.toFixed(2).replace(/\.00$/, "")}x | one-way ${oneWayRealSec.toFixed(2)}s | RTT ${rttRealSec.toFixed(2)}s`;
-        ui.hudPacing.textContent = `Pacing: cwnd=${bytesFmt(Math.round(cwndBytes))} rwnd=${bytesFmt(sim.receiver.wnd)} flight=${bytesFmt(flight)} budget=${bytesFmt(Math.round(sendBudget))}`;
-        ui.hudModel.textContent = `Model: ${ui.ipver.value === "v4" ? "IPv4" : "IPv6"} MTU=${mtuValue()} MSS=${parseInt(ui.mss.value, 10) || 0} effMSS=${eff} lossProb=${lossProbValue().toFixed(0)}%`;
-        ui.hudConn.textContent = `Conn=${sim.conn} queue=${bytesFmt(sim.queueBytes)} acked=${bytesFmt(sim.ackedBytes)} dupACK=${sim.sender.dupAcks} FR=${sim.sender.inFastRecovery ? "on" : "off"}`;
-        ui.hudBuffers.textContent = `Buffers: sender ${bytesFmt(senderBufUsed)}/${bytesFmt(senderBufCapValue())} receiver ${bytesFmt(receiverBufUsed)}/${bytesFmt(receiverBufCapValue())} faults=${faultCount}`;
+      function updateGoodputChart() {
+        const windowMs = sim.rate.windowMs;
+        const now = sim.clock;
+        let windowBytes = 0;
+        const windowCutoff = now - windowMs;
+        for (const entry of sim.rate.events) {
+          if (entry.t >= windowCutoff) windowBytes += entry.bytes;
+        }
+        const currentBps = windowBytes * (1000 / Math.max(1, windowMs));
+        sim.rate.peakBps = Math.max(sim.rate.peakBps, currentBps);
+
+        if (now - sim.rate.lastSampleClock >= sim.rate.sampleIntervalMs) {
+          sim.rate.lastSampleClock = now;
+          sim.rate.samples.push({ t: now, rate: currentBps });
+        }
+
+        const currentBpm = currentBps * 480;
+        const peakBpm = sim.rate.peakBps * 480;
+        ui.rateGoodput.textContent = `${bitsFmt(currentBpm)}/min`;
+        ui.ratePeak.textContent = `${bitsFmt(peakBpm)}/min`;
+        ui.rateWindow.textContent = `${(windowMs / 1000).toFixed(1)}s`;
+
+        const canvas = ui.rateCanvas;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const margin = { left: 48, right: 10, top: 10, bottom: 24 };
+        const plotW = Math.max(1, width - margin.left - margin.right);
+        const plotH = Math.max(1, height - margin.top - margin.bottom);
+        const x0 = margin.left;
+        const y0 = height - margin.bottom;
+
+        ctx.strokeStyle = "#3c556f";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x0, margin.top);
+        ctx.lineTo(x0, y0);
+        ctx.lineTo(x0 + plotW, y0);
+        ctx.stroke();
+
+        ctx.fillStyle = "#9fb0c4";
+        ctx.font = "10px system-ui, sans-serif";
+        ui.rateScale.textContent = `${bitsFmt(Math.max(1, currentBpm))}/min`;
+
+        if (sim.rate.samples.length < 2) return;
+        let maxRate = 1;
+        for (const sample of sim.rate.samples) maxRate = Math.max(maxRate, sample.rate);
+        ui.rateScale.textContent = `${bitsFmt(maxRate * 480)}/min`;
+
+        const startT = sim.rate.samples[0].t;
+        const spanT = Math.max(1, now - startT);
+
+        ctx.strokeStyle = "#26394f";
+        for (let i = 0; i <= 4; i += 1) {
+          const y = y0 - (i / 4) * plotH;
+          ctx.beginPath();
+          ctx.moveTo(x0, y);
+          ctx.lineTo(x0 + plotW, y);
+          ctx.stroke();
+          const v = ((i / 4) * maxRate) * 480;
+          ctx.fillStyle = "#7f93ab";
+          ctx.fillText(bitsFmt(v), 2, y + 3);
+        }
+        for (let i = 0; i <= 4; i += 1) {
+          const x = x0 + (i / 4) * plotW;
+          ctx.beginPath();
+          ctx.moveTo(x, y0);
+          ctx.lineTo(x, y0 + 4);
+          ctx.stroke();
+          const s = ((i / 4) * spanT) / 1000;
+          ctx.fillStyle = "#7f93ab";
+          ctx.fillText(`${s.toFixed(1)}`, x - 9, y0 + 14);
+        }
+
+        ctx.strokeStyle = "#52d6ff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < sim.rate.samples.length; i += 1) {
+          const sample = sim.rate.samples[i];
+          const x = x0 + ((sample.t - startT) / spanT) * plotW;
+          const y = y0 - (sample.rate / maxRate) * plotH;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
       }
 
       function scheduleEvent(delayMs, fn) {
         sim.events.push({ at: sim.clock + delayMs, fn });
+      }
+
+      function logTrace(tag, fields = {}) {
+        const parts = [];
+        for (const [k, v] of Object.entries(fields)) {
+          parts.push(`${k}=${v}`);
+        }
+        const suffix = parts.length ? ` ${parts.join(" ")}` : "";
+        setHud(`[TRACE] ${tag}${suffix}`);
       }
 
       function processEvents() {
@@ -1212,7 +1275,6 @@
 
       function setHud(msg) {
         const line = `[${(sim.clock / 1000).toFixed(2)}s] ${msg}`;
-        ui.hudMsg.textContent = line;
         sim.eventLogLines.push(line);
         if (sim.eventLogLines.length > 300) sim.eventLogLines.shift();
         ui.eventLogPanel.textContent = sim.eventLogLines.join("\n");
@@ -1296,7 +1358,10 @@
       }
 
       function packetFields(kind, seq, ack, len, retransmit, sackBlocks) {
-        const payload = makePayload(len, seq + (retransmit ? 7 : 3));
+        const safeSeq = Math.max(0, Math.floor(Number(seq) || 0));
+        const safeAck = Math.max(0, Math.floor(Number(ack) || 0));
+        const safeLen = Math.max(0, Math.floor(Number(len) || 0));
+        const payload = makePayload(safeLen, safeSeq + (retransmit ? 7 : 3));
         const window = rwndValue() & 0xffff;
         const flags = (
           (kind === "SYN" ? FLAGS.SYN : 0) |
@@ -1309,9 +1374,9 @@
         );
         return {
           kind,
-          seq,
-          ack,
-          len,
+          seq: safeSeq,
+          ack: safeAck,
+          len: safeLen,
           flags,
           srcPort: parseInt(ui.srcPort.value, 10) || 50000,
           dstPort: parseInt(ui.dstPort.value, 10) || 80,
@@ -1324,6 +1389,7 @@
           extraDelayMs: 0,
           corrupted: false,
           dropped: false,
+          traceId: null,
         };
       }
 
@@ -1333,12 +1399,7 @@
         if (!retransmit) {
           sim.segIndex += 1;
           p.segIndex = sim.segIndex;
-          if (sim.faults.drop.has(p.segIndex)) {
-            p.dropped = true;
-            p.lossReason = "fault injector drop";
-          }
-          if (sim.faults.reorder.has(p.segIndex)) p.extraDelayMs += sim.oneWayMs * 0.6;
-          if (sim.faults.corrupt.has(p.segIndex)) p.corrupted = true;
+          p.traceId = `seg-${p.segIndex}`;
         }
         return p;
       }
@@ -1360,6 +1421,10 @@
             meta.lossReason = "random loss probability";
           }
         }
+        if (!meta.traceId) {
+          sim.nextTraceId += 1;
+          meta.traceId = `${meta.kind.toLowerCase()}-${sim.nextTraceId}`;
+        }
         sim.frameIndex += 1;
         const frame = buildFrame(meta);
         const merged = { ...meta, ...frame };
@@ -1369,6 +1434,22 @@
           if (merged.frameNoFcs[i] !== undefined) merged.frameNoFcs[i] = merged.frameNoFcs[i] ^ 0x01;
         }
         showMath(merged);
+        if (dir === "tx" && merged.kind === "DATA") {
+          logTrace("tx_data", {
+            id: merged.traceId,
+            seg: merged.segIndex ?? "-",
+            seq: merged.seq,
+            len: merged.len,
+            ack: merged.ack,
+            retx: merged.retransmit ? 1 : 0,
+            drop: merged.dropped ? 1 : 0,
+            reason: merged.lossReason || "-",
+            sBuf: `${senderBufferOccupancyBytes()}/${senderBufCapValue()}`,
+            rBuf: `${receiverBufferOccupancyBytes()}/${receiverBufCapValue()}`,
+            rwnd: sim.receiver.wnd,
+            flight: flightBytes(),
+          });
+        }
         const packet = createAnimatedPacket(merged, dir, () => onArrive(merged));
         return packet;
       }
@@ -1385,6 +1466,12 @@
 
       function sendAckNow(ackNo, sackBlocks) {
         const ack = ackWithOptionalSack(ackNo, sackBlocks);
+        logTrace("ack_tx", {
+          id: ack.traceId || "-",
+          ack: ackNo,
+          sacks: sackBlocks.length,
+          nxt: sim.receiver.nxt,
+        });
         transmit(ack, "rx", onAckArriveSender);
       }
 
@@ -1402,20 +1489,44 @@
         sim.keepAliveState.lastDataAckClock = sim.clock;
         if (!verifyFcs(frameMeta)) {
           setHud(`frame dropped due to bad FCS (seg #${frameMeta.segIndex || "-"})`);
+          logTrace("rx_drop", {
+            id: frameMeta.traceId || "-",
+            seg: frameMeta.segIndex ?? "-",
+            seq: frameMeta.seq,
+            len: frameMeta.payloadLen || frameMeta.len || 0,
+            reason: "bad_fcs",
+          });
           setIntent("receiver", "SEGMENT ARRIVES: drop bad FCS");
           return;
         }
         if (frameMeta.dropped) {
-          setHud(`segment #${frameMeta.segIndex} dropped by fault injector`);
+          setHud(`segment #${frameMeta.segIndex || "-"} dropped`);
+          logTrace("rx_drop", {
+            id: frameMeta.traceId || "-",
+            seg: frameMeta.segIndex ?? "-",
+            seq: frameMeta.seq,
+            len: frameMeta.payloadLen || frameMeta.len || 0,
+            reason: frameMeta.lossReason || "dropped",
+          });
           setIntent("receiver", "SEGMENT ARRIVES: segment dropped");
           return;
         }
 
         const seq = frameMeta.seq;
         const len = frameMeta.payloadLen;
+        let consumedBytes = 0;
         if (len > 0) {
           if (seq === sim.receiver.nxt) {
+            logTrace("rx_data", {
+              id: frameMeta.traceId || "-",
+              seg: frameMeta.segIndex ?? "-",
+              seq,
+              len,
+              class: "in_order",
+              nxtBefore: sim.receiver.nxt,
+            });
             sim.receiver.nxt += len;
+            consumedBytes += len;
             // Promote buffered out-of-order contiguous segments
             let moved = true;
             while (moved) {
@@ -1424,6 +1535,7 @@
               if (v) {
                 sim.receiver.outOfOrder.delete(sim.receiver.nxt);
                 sim.receiver.nxt += v;
+                consumedBytes += v;
                 moved = true;
               }
             }
@@ -1435,14 +1547,40 @@
               const lostY = (frameMeta.laneY || 420) - 8;
               spawnLostLabel(lostX, lostY);
               setHud(`[CONG-RCV] segment #${frameMeta.segIndex || "-"} lost at receiver congestion buffer`);
+              logTrace("rx_drop", {
+                id: frameMeta.traceId || "-",
+                seg: frameMeta.segIndex ?? "-",
+                seq,
+                len,
+                reason: "receiver_buffer_overflow",
+                rBuf: `${receiverUsed}/${receiverCap}`,
+              });
               setIntent("receiver", "RECEIVE: drop out-of-order segment (buffer full)");
               const sacks = ui.optSACK.checked ? receiverSackBlocks() : [];
               sendAckNow(sim.receiver.nxt, sacks);
               return;
             }
+            logTrace("rx_data", {
+              id: frameMeta.traceId || "-",
+              seg: frameMeta.segIndex ?? "-",
+              seq,
+              len,
+              class: "out_of_order",
+              nxt: sim.receiver.nxt,
+            });
             sim.receiver.outOfOrder.set(seq, len);
+          } else {
+            logTrace("rx_data", {
+              id: frameMeta.traceId || "-",
+              seg: frameMeta.segIndex ?? "-",
+              seq,
+              len,
+              class: "duplicate",
+              nxt: sim.receiver.nxt,
+            });
           }
         }
+        recordReceiverConsumed(consumedBytes);
 
         const sacks = ui.optSACK.checked ? receiverSackBlocks() : [];
         setIntent("receiver", sacks.length ? "RECEIVE: update ACK/SACK view" : "RECEIVE: generate cumulative ACK");
@@ -1485,6 +1623,15 @@
           sim.inFlight.delete(seq);
         }
         if (ackedBytes > 0) {
+          logTrace("ack_rx", {
+            ack: ackNo,
+            lastAck: sim.sender.lastAck,
+            newlyAcked: ackedBytes,
+            dupAcks: sim.sender.dupAcks,
+            una: sim.sender.una,
+            nxt: sim.sender.nxt,
+            flight: flightBytes(),
+          });
           setIntent("sender", "RECEIVE: ACK advanced window");
           sim.sender.una = ackNo;
           sim.sender.dupAcks = 0;
@@ -1498,6 +1645,12 @@
             sim.sender.inFastRecovery = false;
             sim.sender.cwndMss = Math.max(1, sim.sender.ssthreshMss);
             setHud(`fast recovery exit at ACK ${ackNo}`);
+            logTrace("fr_exit", {
+              ack: ackNo,
+              recoverSeq: sim.sender.recoverSeq,
+              cwnd: sim.sender.cwndMss.toFixed(2),
+              ssthresh: Number.isFinite(sim.sender.ssthreshMss) ? sim.sender.ssthreshMss.toFixed(2) : "inf",
+            });
           } else if (!sim.sender.inFastRecovery) {
             // Congestion control (teaching model)
             if (sim.sender.cwndMss < sim.sender.ssthreshMss) {
@@ -1513,6 +1666,13 @@
         } else if (ackNo === sim.sender.lastAck) {
           setIntent("sender", "RECEIVE: duplicate ACK observed");
           sim.sender.dupAcks += 1;
+          logTrace("ack_dup", {
+            ack: ackNo,
+            dupAcks: sim.sender.dupAcks,
+            una: sim.sender.una,
+            recoverSeq: sim.sender.recoverSeq,
+            inFR: sim.sender.inFastRecovery ? 1 : 0,
+          });
           if (sim.sender.dupAcks >= 3 && !sim.sender.inFastRecovery) {
             // Fast retransmit (single entry per recovery episode)
             const target = sim.sender.una;
@@ -1524,6 +1684,13 @@
               sim.sender.cwndMss = sim.sender.ssthreshMss + 3;
               sim.sender.inFastRecovery = true;
               sim.sender.recoverSeq = sim.sender.nxt;
+              logTrace("fr_enter", {
+                ack: ackNo,
+                target: target,
+                cwnd: sim.sender.cwndMss.toFixed(2),
+                ssthresh: Number.isFinite(sim.sender.ssthreshMss) ? sim.sender.ssthreshMss.toFixed(2) : "inf",
+                recoverSeq: sim.sender.recoverSeq,
+              });
               retransmitSegment(seg);
             }
           } else if (sim.sender.inFastRecovery) {
@@ -1539,6 +1706,7 @@
       function retransmitSegment(seg) {
         const m = senderDataSegment(seg.len, true, seg.seq);
         m.segIndex = seg.segIndex;
+        m.traceId = `seg-${seg.segIndex}`;
         transmit(m, "tx", onDataArriveReceiver);
         seg.lastSentClock = sim.clock;
         setIntent("sender", "Resend as timer/dupACK triggers");
@@ -1562,8 +1730,8 @@
         if (sendBudget <= 0) return;
 
         while (sim.queueBytes > 0 && sendBudget > 0) {
-          let len = Math.min(eff, sim.queueBytes, sendBudget);
-          if (ui.pshCoalesce.checked && sim.queueBytes < eff) len = sim.queueBytes;
+          let len = Math.floor(Math.min(eff, sim.queueBytes, sendBudget));
+          if (ui.pshCoalesce.checked && sim.queueBytes < eff) len = Math.floor(sim.queueBytes);
           if (len <= 0) break;
 
           const meta = senderDataSegment(len, false, undefined);
@@ -1574,14 +1742,6 @@
           sim.sender.nxt += len;
           sim.queueBytes -= len;
           sendBudget -= len;
-
-          // Duplicate fault injection
-          if (meta.segIndex && sim.faults.dup.has(meta.segIndex)) {
-            scheduleEvent(200, () => {
-              const clone = { ...meta, retransmit: true, extraDelayMs: 200 };
-              transmit(clone, "tx", onDataArriveReceiver);
-            });
-          }
         }
       }
 
@@ -1633,6 +1793,15 @@
         if (!oldest) return;
         if (sim.clock - oldest.lastSentClock >= sim.rtoMs) {
           setHud(`RTO timeout seq=${oldest.seq}`);
+          logTrace("rto", {
+            seq: oldest.seq,
+            seg: oldest.segIndex ?? "-",
+            elapsed: Math.round(sim.clock - oldest.lastSentClock),
+            rto: Math.round(sim.rtoMs),
+            una: sim.sender.una,
+            nxt: sim.sender.nxt,
+            flight: flightBytes(),
+          });
           setIntent("sender", "Timeouts: retransmission timer expired");
           sim.sender.ssthreshMss = Math.max(2, sim.sender.cwndMss / 2);
           sim.sender.cwndMss = 1;
@@ -1751,6 +1920,14 @@
             spawnLostLabel(lostX, lostY);
             const reason = p.meta.lossReason ? ` (${p.meta.lossReason})` : "";
             setHud(`segment #${p.meta.segIndex || "-"} lost in transit${reason}`);
+            logTrace("loss_in_transit", {
+              id: p.meta.traceId || "-",
+              seg: p.meta.segIndex ?? "-",
+              seq: p.meta.seq,
+              len: p.meta.len || 0,
+              reason: p.meta.lossReason || "-",
+              progress: progress.toFixed(2),
+            });
             setIntent("receiver", "SEGMENT ARRIVES: segment lost in transit");
             continue;
           }
@@ -1782,7 +1959,7 @@
           deriveIntentions();
           updateBars();
           updateStatus();
-          updateHudInfo();
+          updateGoodputChart();
         }
         requestAnimationFrame(tick);
       }
@@ -1793,9 +1970,20 @@
         sim.queueBytes = payloadSliderBytes();
         sim.initialQueueBytes = sim.queueBytes;
         sim.keepAliveState.lastDataAckClock = sim.clock;
+        logTrace("run_config", {
+          speed: speedValue(),
+          ip: ui.ipver.value,
+          mtu: mtuValue(),
+          mss: parseInt(ui.mss.value, 10) || 0,
+          effMss: effectiveMss(),
+          payload: payloadSliderBytes(),
+          lossProb: lossProbValue().toFixed(0),
+          sndBufCap: senderBufCapValue(),
+          rcvBufCap: receiverBufCapValue(),
+          rwnd: rwndValue(),
+        });
         updateBars();
         updateStatus();
-        updateHudInfo();
         startHandshake(true);
         requestAnimationFrame(tick);
       }
@@ -1809,6 +1997,18 @@
         if (sim.conn === "CLOSED") {
           sim.queueBytes = payloadSliderBytes();
           sim.initialQueueBytes = sim.queueBytes;
+          logTrace("run_config", {
+            speed: speedValue(),
+            ip: ui.ipver.value,
+            mtu: mtuValue(),
+            mss: parseInt(ui.mss.value, 10) || 0,
+            effMss: effectiveMss(),
+            payload: payloadSliderBytes(),
+            lossProb: lossProbValue().toFixed(0),
+            sndBufCap: senderBufCapValue(),
+            rcvBufCap: receiverBufCapValue(),
+            rwnd: rwndValue(),
+          });
           startHandshake(true);
         } else if (sim.conn === "ESTABLISHED") {
           if (sim.queueBytes === 0) {
@@ -1832,7 +2032,7 @@
         deriveIntentions();
         updateBars();
         updateStatus();
-        updateHudInfo();
+        updateGoodputChart();
       }
 
       // -------------------- Event Wiring --------------------
@@ -1845,7 +2045,7 @@
         updateDerivedUi();
         updateBars();
         updateStatus();
-        updateHudInfo();
+        updateGoodputChart();
       }));
 
       ui.btnStart.addEventListener("click", () => startRun());
@@ -1896,7 +2096,7 @@
       updateDerivedUi();
       applyTooltips();
       deriveIntentions();
-      updateHudInfo();
+      updateGoodputChart();
     </script>
   </body>
 </html>
