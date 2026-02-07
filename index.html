@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TCP Transport Visualizer</title>
+    <style>
+      :root {
+        --bg: #0b1016;
+        --panel: #111924;
+        --panel2: #0f1520;
+        --fg: #e6edf3;
+        --muted: #a7b1bf;
+        --line: #2a3442;
+        --ok: #4bd37b;
+        --warn: #e8b74a;
+        --bad: #e06969;
+        --blue: #5aa8ff;
+        --teal: #4bc4cf;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(1200px 700px at 70% -10%, #142337, var(--bg));
+        color: var(--fg);
+        font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      }
+      .app {
+        height: 100%;
+        display: grid;
+        grid-template-columns: 360px 1fr;
+      }
+      aside {
+        overflow: auto;
+        border-right: 1px solid #233146;
+        background: linear-gradient(180deg, var(--panel), var(--panel2));
+        padding: 14px 14px 24px;
+      }
+      .section {
+        border: 1px solid #233146;
+        background: #0f1723;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      h1 { font-size: 16px; margin: 0 0 10px; }
+      h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .05em; }
+      label { display: block; margin: 5px 0; }
+      input, select, button {
+        font: inherit;
+      }
+      input[type="number"], input[type="text"], select {
+        width: 100%;
+        background: #0b1320;
+        color: var(--fg);
+        border: 1px solid #2b3a52;
+        border-radius: 6px;
+        padding: 5px 6px;
+      }
+      input[type="range"] { width: 100%; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .btn {
+        border: 1px solid #35507a;
+        background: #15253c;
+        color: #d8e8ff;
+        border-radius: 7px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .tiny { font-size: 11px; color: var(--muted); }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #2d466b;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: #112038;
+      }
+      .status {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .status .k {
+        color: var(--muted);
+      }
+      .panel-scroll {
+        max-height: 120px;
+        overflow: auto;
+        border: 1px solid #27364f;
+        background: #0b1320;
+        border-radius: 6px;
+        padding: 6px;
+      }
+      .scene-wrap {
+        position: relative;
+        overflow: hidden;
+      }
+      svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .hud {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 330px;
+        border: 1px solid #2b3b56;
+        background: #0f1828cc;
+        border-radius: 10px;
+        padding: 8px;
+        backdrop-filter: blur(2px);
+      }
+      .hud h3 {
+        margin: 0 0 5px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .hud .line {
+        margin: 2px 0;
+      }
+      details.math {
+        position: absolute;
+        left: 10px;
+        bottom: 10px;
+        width: min(620px, calc(100% - 20px));
+        border: 1px solid #2b3b56;
+        border-radius: 10px;
+        background: #0f1828d8;
+        padding: 8px;
+      }
+      details.eventlog {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        width: min(620px, calc(100% - 20px));
+        border: 1px solid #2b3b56;
+        border-radius: 10px;
+        background: #0f1828d8;
+        padding: 8px;
+      }
+      #eventLogPanel {
+        margin-top: 8px;
+        max-height: 220px;
+        overflow: auto;
+        white-space: pre-wrap;
+        background: #0b1320;
+        border: 1px solid #26354f;
+        border-radius: 6px;
+        padding: 6px;
+      }
+      details.math summary { cursor: pointer; }
+      #mathPanel {
+        margin-top: 8px;
+        max-height: 270px;
+        overflow: auto;
+      }
+      #mathPanel pre {
+        margin: 6px 0;
+        white-space: pre-wrap;
+        background: #0b1320;
+        border: 1px solid #26354f;
+        border-radius: 6px;
+        padding: 6px;
+      }
+      .kbd {
+        border: 1px solid #35507a;
+        border-radius: 4px;
+        padding: 1px 5px;
+        background: #13243d;
+      }
+      .ok { color: var(--ok); }
+      .warn { color: var(--warn); }
+      .bad { color: var(--bad); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <h1>TCP Transport Visualizer</h1>
+
+        <div class="section">
+          <h2>Run Control</h2>
+          <div class="row">
+            <button id="btnStart" class="btn" title="Run handshake + data">Start</button>
+            <button id="btnPause" class="btn" title="Pause/resume">Pause</button>
+            <button id="btnReset" class="btn" title="Reset simulation">Reset</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="btnHandshake" class="btn">Handshake</button>
+            <button id="btnData" class="btn">Send Data</button>
+            <button id="btnClose" class="btn">Close</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <span class="pill">Speed <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1" /><output id="speedOut">1x</output></span>
+          </div>
+          <div class="tiny" style="margin-top:6px">
+            Keyboard: <span class="kbd">Space</span> play/pause, <span class="kbd">←/→</span> step, <span class="kbd">+</span>/<span class="kbd">-</span> speed
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Stack and Inputs</h2>
+          <div class="grid2">
+            <label>IP Version
+              <select id="ipver">
+                <option value="v4">IPv4</option>
+                <option value="v6">IPv6</option>
+              </select>
+            </label>
+            <label>MTU
+              <input id="mtu" type="number" min="576" max="9000" step="1" value="1500" />
+            </label>
+          </div>
+          <div class="grid2">
+            <label>Src Port<input id="srcPort" type="number" min="1" max="65535" value="50000" /></label>
+            <label>Dst Port<input id="dstPort" type="number" min="1" max="65535" value="80" /></label>
+          </div>
+          <label>Payload Bytes
+            <input id="payload" type="range" min="1024" max="10485760" step="1024" value="32768" />
+          </label>
+          <div class="row">
+            <output id="payloadOut" class="mono">32768 B</output>
+            <span class="tiny">Queue source for sender backlog bar</span>
+          </div>
+          <div class="grid2">
+            <label>MSS<input id="mss" type="number" min="128" max="9000" step="1" value="1460" /></label>
+            <label>Effective MSS<input id="effMss" type="text" value="1460" readonly /></label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>TCP Features</h2>
+          <div class="grid2">
+            <label><input id="optMSS" type="checkbox" checked /> MSS option</label>
+            <label><input id="optSACK" type="checkbox" /> SACK Permitted</label>
+            <label><input id="optWS" type="checkbox" /> Window Scale</label>
+            <label><input id="optTS" type="checkbox" /> Timestamps</label>
+            <label><input id="ackEvery" type="checkbox" checked /> ACK every segment</label>
+            <label><input id="delayedAck" type="checkbox" /> Delayed ACK</label>
+            <label><input id="nagle" type="checkbox" /> Nagle</label>
+            <label><input id="pshCoalesce" type="checkbox" /> PSH coalescing</label>
+            <label><input id="keepAlive" type="checkbox" /> Keep-alive (accelerated)</label>
+            <label><input id="persist" type="checkbox" /> Persist probes (accelerated)</label>
+          </div>
+          <div class="grid3">
+            <label>init cwnd (MSS)<input id="initCwnd" type="number" min="1" max="100" value="2" /></label>
+            <label>ssthresh<input id="ssthresh" type="text" value="inf" /></label>
+            <label>rwnd (bytes)<input id="rwnd" type="number" min="0" max="16777216" step="1024" value="65535" /></label>
+          </div>
+          <div class="grid2">
+            <label>Sender buffer cap (bytes)<input id="senderBufCap" type="number" min="1024" max="16777216" step="1024" value="262144" /></label>
+            <label>Receiver buffer cap (bytes)<input id="receiverBufCap" type="number" min="1024" max="16777216" step="1024" value="262144" /></label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Fault Injection (Freeform)</h2>
+          <div class="tiny">Comma-separated indexes, no cap. Applies to sender data segment index.</div>
+          <label>Segment Loss Probability
+            <input id="lossProb" type="range" min="0" max="100" step="1" value="0" />
+          </label>
+          <div class="row">
+            <output id="lossProbOut" class="mono">0%</output>
+            <span class="tiny">Random in-transit loss for data segments</span>
+          </div>
+          <div class="grid2">
+            <label>Drop seg #<input id="dropIdx" type="text" placeholder="e.g. 3,7,10" /></label>
+            <label>Reorder N<input id="reorderIdx" type="text" placeholder="e.g. 2,9" /></label>
+            <label>Duplicate seg #<input id="dupIdx" type="text" placeholder="e.g. 4,8" /></label>
+            <label>Corrupt frame #<input id="corruptIdx" type="text" placeholder="e.g. 5" /></label>
+          </div>
+          <div class="grid2">
+            <label><input id="jitterOn" type="checkbox" /> Variable delay/jitter</label>
+            <label>Jitter ms<input id="jitterMs" type="number" min="0" max="3000" step="50" value="500" /></label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Header Display</h2>
+          <label><input id="showEth" type="checkbox" checked /> Ethernet details</label>
+          <label><input id="showIp" type="checkbox" checked /> IP details</label>
+          <label><input id="showTcp" type="checkbox" checked /> TCP details</label>
+          <div class="tiny">These controls collapse/expand in-flight header field mini-boxes.</div>
+        </div>
+
+        <div class="section">
+          <h2>Status</h2>
+          <div class="status">
+            <div class="k">Conn</div><div id="stConn" class="mono">CLOSED</div>
+            <div class="k">cwnd</div><div id="stCwnd" class="mono">2.00 MSS</div>
+            <div class="k">ssthresh</div><div id="stSsth" class="mono">inf</div>
+            <div class="k">flight</div><div id="stFlight" class="mono">0 B</div>
+            <div class="k">queue</div><div id="stQueue" class="mono">0 B</div>
+            <div class="k">acked</div><div id="stAcked" class="mono">0 B</div>
+            <div class="k">RTO</div><div id="stRto" class="mono">idle</div>
+            <div class="k">dupACK</div><div id="stDupAck" class="mono">0</div>
+            <div class="k">FR</div><div id="stFr" class="mono">off</div>
+          </div>
+          <div style="margin-top:6px" class="tiny">SACK scoreboard</div>
+          <div id="scoreboard" class="panel-scroll mono"></div>
+        </div>
+      </aside>
+
+      <div class="scene-wrap">
+        <svg id="scene" viewBox="0 0 1400 720" aria-label="TCP visualization scene">
+          <defs>
+            <marker id="arrowFwd" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 z" fill="#5aa8ff"></path>
+            </marker>
+            <marker id="arrowBack" markerWidth="8" markerHeight="8" refX="2" refY="3" orient="auto">
+              <path d="M6,0 L0,3 L6,6 z" fill="#4bc4cf"></path>
+            </marker>
+          </defs>
+          <rect x="0" y="0" width="1400" height="720" fill="transparent"></rect>
+
+          <g id="hosts">
+            <rect x="40" y="70" width="270" height="170" rx="14" fill="#162232" stroke="#2e445d"></rect>
+            <text x="175" y="102" text-anchor="middle" fill="#e6edf3" font-size="20">Sender</text>
+            <rect x="76" y="122" width="198" height="22" fill="#0b141f" stroke="#2a4950"></rect>
+            <rect id="senderQueueBar" x="76" y="122" width="0" height="22" fill="#4bd37b"></rect>
+            <text id="senderQueueText" x="175" y="138" text-anchor="middle" font-size="11" fill="#e6edf3"></text>
+            <text x="76" y="157" fill="#9fb0c4" font-size="11">Send Buffer</text>
+            <rect x="76" y="163" width="198" height="10" fill="#0b141f" stroke="#2e5466"></rect>
+            <rect id="senderBufBar" x="76" y="163" width="0" height="10" fill="#56d4dd"></rect>
+            <text id="senderBufText" x="175" y="173" text-anchor="middle" font-size="9" fill="#e6edf3"></text>
+            <text x="76" y="184" fill="#9fb0c4" font-size="11">RTO Timer</text>
+            <rect x="76" y="190" width="198" height="12" fill="#0b141f" stroke="#4f4657"></rect>
+            <rect id="rtoBar" x="76" y="190" width="0" height="12" fill="#e8b74a"></rect>
+            <text id="rtoText" x="175" y="216" text-anchor="middle" font-size="11" fill="#e6edf3">idle</text>
+            <text id="senderIntentText" x="175" y="230" text-anchor="middle" font-size="10" fill="#ffd89a">intent: idle</text>
+
+            <rect x="1090" y="70" width="270" height="170" rx="14" fill="#162232" stroke="#2e445d"></rect>
+            <text x="1225" y="102" text-anchor="middle" fill="#e6edf3" font-size="20">Receiver</text>
+            <rect x="1126" y="122" width="198" height="22" fill="#0b141f" stroke="#334d73"></rect>
+            <rect id="receiverWndBar" x="1126" y="122" width="198" height="22" fill="#5aa8ff"></rect>
+            <text id="receiverWndText" x="1225" y="138" text-anchor="middle" font-size="11" fill="#e6edf3"></text>
+            <text x="1126" y="157" fill="#9fb0c4" font-size="11">Recv Buffer</text>
+            <rect x="1126" y="163" width="198" height="10" fill="#0b141f" stroke="#2e5466"></rect>
+            <rect id="receiverBufBar" x="1126" y="163" width="0" height="10" fill="#56d4dd"></rect>
+            <text id="receiverBufText" x="1225" y="173" text-anchor="middle" font-size="9" fill="#e6edf3"></text>
+            <text x="1126" y="184" fill="#9fb0c4" font-size="11">TIME-WAIT</text>
+            <rect x="1126" y="190" width="198" height="12" fill="#0b141f" stroke="#35506d"></rect>
+            <rect id="timeWaitBar" x="1126" y="190" width="0" height="12" fill="#4bc4cf"></rect>
+            <text id="timeWaitText" x="1225" y="216" text-anchor="middle" font-size="11" fill="#e6edf3">idle</text>
+            <text id="receiverIntentText" x="1225" y="230" text-anchor="middle" font-size="10" fill="#c6e7ff">intent: idle</text>
+          </g>
+
+          <g id="network">
+            <line x1="310" y1="360" x2="1090" y2="360" stroke="#2a3442" stroke-width="4"></line>
+            <line x1="310" y1="345" x2="1090" y2="345" stroke="#32465f" stroke-width="1" marker-end="url(#arrowFwd)"></line>
+            <line x1="1090" y1="375" x2="310" y2="375" stroke="#345f65" stroke-width="1" marker-end="url(#arrowBack)"></line>
+            <text x="700" y="334" text-anchor="middle" fill="#8fa4bb" font-size="11">Data / control path</text>
+            <text x="700" y="395" text-anchor="middle" fill="#8fa4bb" font-size="11">ACK path</text>
+          </g>
+
+          <g id="packetLayer"></g>
+        </svg>
+
+        <div class="hud">
+          <h3>Simulation HUD</h3>
+          <div class="line tiny">1x speed: 5s one-way, 5s ACK return, RTT 10s</div>
+          <div class="line tiny">Pacing uses min(cwnd,rwnd) and RTT-derived flight limit</div>
+          <div class="line tiny">In-flight PDU: Ethernet + IP + TCP + payload (proportional sizing)</div>
+          <div id="hudMsg" class="line mono">Ready</div>
+        </div>
+
+        <details class="math">
+          <summary>Show checksum math</summary>
+          <div id="mathPanel"></div>
+        </details>
+        <details class="eventlog">
+          <summary>Event log</summary>
+          <div id="eventLogPanel" class="mono"></div>
+        </details>
+      </div>
+    </div>
+
+    <script>
+      // -------------------- Utilities --------------------
+      const NS = "http://www.w3.org/2000/svg";
+      const FLAGS = { FIN: 0x01, SYN: 0x02, RST: 0x04, PSH: 0x08, ACK: 0x10, URG: 0x20, ECE: 0x40, CWR: 0x80 };
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      const toHex = (v, w = 2) => "0x" + (v >>> 0).toString(16).toUpperCase().padStart(w, "0");
+      const toBytes16 = (v) => [((v >>> 8) & 0xff), (v & 0xff)];
+      const toBytes32 = (v) => [((v >>> 24) & 0xff), ((v >>> 16) & 0xff), ((v >>> 8) & 0xff), (v & 0xff)];
+      const bytesFmt = (n) => (n >= 1048576 ? (n / 1048576).toFixed(2) + " MB" : n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B");
+
+      function parseIndexList(s) {
+        if (!s.trim()) return new Set();
+        return new Set(
+          s.split(",")
+            .map((x) => parseInt(x.trim(), 10))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        );
+      }
+
+      function ip4ToBytes(ip) {
+        return ip.split(".").map((x) => parseInt(x, 10) & 0xff);
+      }
+
+      function ip6ToBytes(ip) {
+        const parts = ip.split("::");
+        const left = parts[0] ? parts[0].split(":").filter(Boolean) : [];
+        const right = parts[1] ? parts[1].split(":").filter(Boolean) : [];
+        const missing = Math.max(0, 8 - left.length - right.length);
+        const words = [...left, ...new Array(missing).fill("0"), ...right].map((h) => parseInt(h, 16) || 0);
+        const out = [];
+        for (const w of words) out.push((w >>> 8) & 0xff, w & 0xff);
+        return out;
+      }
+
+      // Ethernet FCS CRC32 reflected
+      const CRC32 = (() => {
+        const table = new Uint32Array(256);
+        for (let i = 0; i < 256; i += 1) {
+          let c = i;
+          for (let j = 0; j < 8; j += 1) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          table[i] = c >>> 0;
+        }
+        return function crc32(bytes) {
+          let crc = 0xffffffff >>> 0;
+          for (const b of bytes) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8);
+          return (~crc) >>> 0;
+        };
+      })();
+
+      function onesComplement16(bytes) {
+        let sum = 0;
+        for (let i = 0; i < bytes.length; i += 2) {
+          const w = ((bytes[i] || 0) << 8) | (bytes[i + 1] || 0);
+          sum += w;
+          sum = (sum & 0xffff) + (sum >>> 16);
+        }
+        return (~sum) & 0xffff;
+      }
+
+      function onesComplement16Detailed(bytes, maxWords = 32) {
+        let sum = 0;
+        const lines = [];
+        for (let i = 0; i < bytes.length; i += 2) {
+          const w = ((bytes[i] || 0) << 8) | (bytes[i + 1] || 0);
+          sum += w;
+          sum = (sum & 0xffff) + (sum >>> 16);
+          if (i / 2 < maxWords) lines.push(`word[${(i / 2).toString().padStart(2, "0")}] = ${toHex(w, 4)}, sum -> ${toHex(sum, 4)}`);
+        }
+        const final = (~sum) & 0xffff;
+        if (bytes.length / 2 > maxWords) lines.push(`... ${Math.floor(bytes.length / 2) - maxWords} more words omitted`);
+        lines.push(`final checksum = ${toHex(final, 4)}`);
+        return { checksum: final, lines };
+      }
+
+      // -------------------- UI --------------------
+      const ui = {
+        scene: document.getElementById("scene"),
+        packetLayer: document.getElementById("packetLayer"),
+        hudMsg: document.getElementById("hudMsg"),
+        mathPanel: document.getElementById("mathPanel"),
+        speed: document.getElementById("speed"),
+        speedOut: document.getElementById("speedOut"),
+        ipver: document.getElementById("ipver"),
+        mtu: document.getElementById("mtu"),
+        srcPort: document.getElementById("srcPort"),
+        dstPort: document.getElementById("dstPort"),
+        payload: document.getElementById("payload"),
+        payloadOut: document.getElementById("payloadOut"),
+        mss: document.getElementById("mss"),
+        effMss: document.getElementById("effMss"),
+        optMSS: document.getElementById("optMSS"),
+        optSACK: document.getElementById("optSACK"),
+        optWS: document.getElementById("optWS"),
+        optTS: document.getElementById("optTS"),
+        ackEvery: document.getElementById("ackEvery"),
+        delayedAck: document.getElementById("delayedAck"),
+        nagle: document.getElementById("nagle"),
+        pshCoalesce: document.getElementById("pshCoalesce"),
+        keepAlive: document.getElementById("keepAlive"),
+        persist: document.getElementById("persist"),
+        initCwnd: document.getElementById("initCwnd"),
+        ssthresh: document.getElementById("ssthresh"),
+        rwnd: document.getElementById("rwnd"),
+        senderBufCap: document.getElementById("senderBufCap"),
+        receiverBufCap: document.getElementById("receiverBufCap"),
+        dropIdx: document.getElementById("dropIdx"),
+        reorderIdx: document.getElementById("reorderIdx"),
+        dupIdx: document.getElementById("dupIdx"),
+        corruptIdx: document.getElementById("corruptIdx"),
+        lossProb: document.getElementById("lossProb"),
+        lossProbOut: document.getElementById("lossProbOut"),
+        jitterOn: document.getElementById("jitterOn"),
+        jitterMs: document.getElementById("jitterMs"),
+        showEth: document.getElementById("showEth"),
+        showIp: document.getElementById("showIp"),
+        showTcp: document.getElementById("showTcp"),
+        btnStart: document.getElementById("btnStart"),
+        btnPause: document.getElementById("btnPause"),
+        btnReset: document.getElementById("btnReset"),
+        btnHandshake: document.getElementById("btnHandshake"),
+        btnData: document.getElementById("btnData"),
+        btnClose: document.getElementById("btnClose"),
+        senderQueueBar: document.getElementById("senderQueueBar"),
+        senderQueueText: document.getElementById("senderQueueText"),
+        senderBufBar: document.getElementById("senderBufBar"),
+        senderBufText: document.getElementById("senderBufText"),
+        senderIntentText: document.getElementById("senderIntentText"),
+        receiverWndBar: document.getElementById("receiverWndBar"),
+        receiverWndText: document.getElementById("receiverWndText"),
+        receiverBufBar: document.getElementById("receiverBufBar"),
+        receiverBufText: document.getElementById("receiverBufText"),
+        receiverIntentText: document.getElementById("receiverIntentText"),
+        rtoBar: document.getElementById("rtoBar"),
+        rtoText: document.getElementById("rtoText"),
+        timeWaitBar: document.getElementById("timeWaitBar"),
+        timeWaitText: document.getElementById("timeWaitText"),
+        eventLogPanel: document.getElementById("eventLogPanel"),
+        stConn: document.getElementById("stConn"),
+        stCwnd: document.getElementById("stCwnd"),
+        stSsth: document.getElementById("stSsth"),
+        stFlight: document.getElementById("stFlight"),
+        stQueue: document.getElementById("stQueue"),
+        stAcked: document.getElementById("stAcked"),
+        stRto: document.getElementById("stRto"),
+        stDupAck: document.getElementById("stDupAck"),
+        stFr: document.getElementById("stFr"),
+        scoreboard: document.getElementById("scoreboard"),
+      };
+
+      // -------------------- Simulation State --------------------
+      const sim = {
+        running: false,
+        paused: false,
+        lastRealTs: 0,
+        clock: 0, // simulation ms
+        oneWayMs: 5000,
+        baseRttMs: 10000,
+        rtoMs: 15000,
+        conn: "CLOSED",
+        queueBytes: 0,
+        initialQueueBytes: 0,
+        ackedBytes: 0,
+        segIndex: 0,
+        frameIndex: 0,
+        packets: [],
+        events: [],
+        inFlight: new Map(), // seq -> segment metadata
+        sender: {
+          iss: 1000,
+          una: 1000,
+          nxt: 1000,
+          cwndMss: 2,
+          ssthreshMss: Infinity,
+          dupAcks: 0,
+          lastAck: 1000,
+          inFastRecovery: false,
+          recoverSeq: 1000,
+        },
+        receiver: {
+          iss: 5000,
+          nxt: 5001,
+          wnd: 65535,
+          outOfOrder: new Map(), // seq -> len
+        },
+        delayedAckState: null,
+        persistState: null,
+        keepAliveState: { lastDataAckClock: 0, probes: 0, waiting: false },
+        timeWaitUntil: 0,
+        scoreboard: [],
+        eventLogLines: [],
+        deliveryCompleteLogged: false,
+        senderIntentOverride: null,
+        receiverIntentOverride: null,
+        faults: {
+          drop: new Set(),
+          reorder: new Set(),
+          dup: new Set(),
+          corrupt: new Set(),
+        },
+        nextColorLane: 0,
+      };
+
+      // -------------------- Config / Derived --------------------
+      function speedValue() { return parseFloat(ui.speed.value); }
+      function payloadSliderBytes() { return parseInt(ui.payload.value, 10); }
+      function mtuValue() { return clamp(parseInt(ui.mtu.value, 10) || 1500, 576, 9000); }
+      function rwndValue() { return Math.max(0, parseInt(ui.rwnd.value, 10) || 0); }
+      function senderBufCapValue() { return Math.max(1024, parseInt(ui.senderBufCap.value, 10) || 262144); }
+      function receiverBufCapValue() { return Math.max(1024, parseInt(ui.receiverBufCap.value, 10) || 262144); }
+      function initCwndValue() { return Math.max(1, parseFloat(ui.initCwnd.value) || 2); }
+      function lossProbValue() { return clamp(parseFloat(ui.lossProb.value) || 0, 0, 100); }
+      function ssthreshValue() {
+        const raw = ui.ssthresh.value.trim().toLowerCase();
+        if (raw === "" || raw === "inf" || raw === "infinity") return Infinity;
+        const n = parseFloat(raw);
+        return Number.isFinite(n) && n > 0 ? n : Infinity;
+      }
+
+      function tcpOptionsLength(kind, sackBlocks) {
+        let len = 0;
+        const isSyn = kind === "SYN" || kind === "SYN-ACK";
+        if (isSyn && ui.optMSS.checked) len += 4;
+        if (isSyn && ui.optSACK.checked) len += 2;
+        if (isSyn && ui.optWS.checked) len += 3;
+        if (ui.optTS.checked) len += 10 + 2; // NOP,NOP + TS option
+        if ((kind === "ACK" || kind === "SYN-ACK") && ui.optSACK.checked && sackBlocks && sackBlocks.length > 0) {
+          const count = Math.min(4, sackBlocks.length);
+          len += 2 + (count * 8);
+        }
+        while (len % 4 !== 0) len += 1;
+        return len;
+      }
+
+      function effectiveMss() {
+        const ipLen = ui.ipver.value === "v4" ? 20 : 40;
+        const tcpLen = 20 + tcpOptionsLength("DATA", null);
+        const byMtu = Math.max(1, mtuValue() - ipLen - tcpLen);
+        const userMss = Math.max(1, parseInt(ui.mss.value, 10) || 1460);
+        const eff = Math.min(userMss, byMtu);
+        ui.effMss.value = String(eff);
+        return eff;
+      }
+
+      // -------------------- Packet Encoding --------------------
+      function buildTcpOptions(kind, sackBlocks) {
+        const opt = [];
+        const labels = [];
+        const isSyn = kind === "SYN" || kind === "SYN-ACK";
+        if (isSyn && ui.optMSS.checked) {
+          const mss = effectiveMss();
+          opt.push(2, 4, ...toBytes16(mss));
+          labels.push(`MSS=${mss}`);
+        }
+        if (isSyn && ui.optSACK.checked) {
+          opt.push(4, 2);
+          labels.push("SACK-Permitted");
+        }
+        if (isSyn && ui.optWS.checked) {
+          const scale = 7;
+          opt.push(3, 3, scale);
+          labels.push(`WS=${scale}`);
+        }
+        if (ui.optTS.checked) {
+          const tsVal = Math.floor(sim.clock / 10) >>> 0;
+          const tsEcr = 0;
+          opt.push(1, 1, 8, 10, ...toBytes32(tsVal), ...toBytes32(tsEcr));
+          labels.push(`TS=${tsVal}`);
+        }
+        if ((kind === "ACK" || kind === "SYN-ACK") && ui.optSACK.checked && sackBlocks && sackBlocks.length > 0) {
+          const blocks = sackBlocks.slice(0, 4);
+          const len = 2 + blocks.length * 8;
+          opt.push(5, len);
+          for (const b of blocks) opt.push(...toBytes32(b.left >>> 0), ...toBytes32(b.right >>> 0));
+          labels.push(`SACK=${blocks.map((b) => `[${b.left}-${b.right})`).join(",")}`);
+        }
+        while (opt.length % 4 !== 0) opt.push(1); // NOP padding
+        return { bytes: opt, label: labels.join(" ") || "-" };
+      }
+
+      function flagString(flags) {
+        const names = [];
+        if (flags & FLAGS.SYN) names.push("SYN");
+        if (flags & FLAGS.ACK) names.push("ACK");
+        if (flags & FLAGS.FIN) names.push("FIN");
+        if (flags & FLAGS.PSH) names.push("PSH");
+        if (flags & FLAGS.RST) names.push("RST");
+        if (flags & FLAGS.URG) names.push("URG");
+        return names.join("|") || "NONE";
+      }
+
+      function tcpChecksum(ipVersion, srcIP, dstIP, tcpBytes) {
+        const pseudo = [];
+        if (ipVersion === "v4") {
+          pseudo.push(...ip4ToBytes(srcIP), ...ip4ToBytes(dstIP), 0x00, 0x06, ...toBytes16(tcpBytes.length));
+        } else {
+          pseudo.push(...ip6ToBytes(srcIP), ...ip6ToBytes(dstIP), ...toBytes32(tcpBytes.length), 0x00, 0x00, 0x00, 0x06);
+        }
+        const joined = [...pseudo, ...tcpBytes];
+        const detail = onesComplement16Detailed(joined, 24);
+        return { checksum: detail.checksum, lines: detail.lines, pseudoBytes: pseudo };
+      }
+
+      function buildIPv4Header(totalLen, srcIP, dstIP) {
+        const bytes = [
+          0x45, 0x00,
+          ...toBytes16(totalLen),
+          ...toBytes16(0x1234),
+          ...toBytes16(0x0000),
+          64,
+          6,
+          0x00, 0x00,
+          ...ip4ToBytes(srcIP),
+          ...ip4ToBytes(dstIP),
+        ];
+        const detail = onesComplement16Detailed(bytes, 10);
+        const checksum = detail.checksum;
+        bytes[10] = (checksum >>> 8) & 0xff;
+        bytes[11] = checksum & 0xff;
+        return { bytes, checksum, lines: detail.lines };
+      }
+
+      function buildIPv6Header(payloadLen, srcIP, dstIP) {
+        const bytes = [
+          0x60, 0x00, 0x00, 0x00,
+          ...toBytes16(payloadLen),
+          0x06,
+          64,
+          ...ip6ToBytes(srcIP),
+          ...ip6ToBytes(dstIP),
+        ];
+        return { bytes };
+      }
+
+      function makePayload(len, seed) {
+        const out = new Uint8Array(len);
+        for (let i = 0; i < len; i += 1) out[i] = (seed * 13 + i * 31 + 7) & 0xff;
+        return Array.from(out);
+      }
+
+      function buildFrame(meta) {
+        const ipVersion = ui.ipver.value;
+        const srcIP = ipVersion === "v4" ? "192.0.2.1" : "2001:db8::1";
+        const dstIP = ipVersion === "v4" ? "192.0.2.2" : "2001:db8::2";
+        const options = buildTcpOptions(meta.kind, meta.sackBlocks || null);
+        const tcpHeaderLen = 20 + options.bytes.length;
+        const dataOffset = tcpHeaderLen / 4;
+        const tcpFlags = meta.flags;
+        const tcpNoCsum = [
+          ...toBytes16(meta.srcPort),
+          ...toBytes16(meta.dstPort),
+          ...toBytes32(meta.seq >>> 0),
+          ...toBytes32(meta.ack >>> 0),
+          ((dataOffset << 4) & 0xf0),
+          tcpFlags & 0xff,
+          ...toBytes16(meta.window & 0xffff),
+          0x00, 0x00, // checksum
+          ...toBytes16(meta.urgentPtr & 0xffff),
+          ...options.bytes,
+          ...meta.payload,
+        ];
+        const tcpCsum = tcpChecksum(ipVersion, srcIP, dstIP, tcpNoCsum);
+        tcpNoCsum[16] = (tcpCsum.checksum >>> 8) & 0xff;
+        tcpNoCsum[17] = tcpCsum.checksum & 0xff;
+
+        let ipBytes = [];
+        let ipChecksum = null;
+        let ipChecksumLines = [];
+        if (ipVersion === "v4") {
+          const ip = buildIPv4Header(20 + tcpNoCsum.length, srcIP, dstIP);
+          ipBytes = ip.bytes;
+          ipChecksum = ip.checksum;
+          ipChecksumLines = ip.lines;
+        } else {
+          ipBytes = buildIPv6Header(tcpNoCsum.length, srcIP, dstIP).bytes;
+        }
+
+        const ethType = ipVersion === "v4" ? [0x08, 0x00] : [0x86, 0xdd];
+        const ethHeader = [
+          0x02, 0x00, 0x00, 0x00, 0x00, 0x02, // dst
+          0x02, 0x00, 0x00, 0x00, 0x00, 0x01, // src
+          ...ethType,
+        ];
+
+        const frameNoFcs = [...ethHeader, ...ipBytes, ...tcpNoCsum];
+        const fcs = CRC32(frameNoFcs);
+        const fcsBytes = toBytes32(fcs).reverse();
+
+        return {
+          ipVersion,
+          srcIP,
+          dstIP,
+          optionsLabel: options.label,
+          tcpHeaderLen,
+          ipHeaderLen: ipVersion === "v4" ? 20 : 40,
+          tcpChecksum: tcpCsum.checksum,
+          tcpChecksumLines: tcpCsum.lines,
+          ipChecksum,
+          ipChecksumLines,
+          fcs,
+          frameNoFcs,
+          frameBytes: [...frameNoFcs, ...fcsBytes],
+          payloadLen: meta.payload.length,
+          totalLen: frameNoFcs.length + 4,
+          dataOffset,
+          flagLabel: flagString(meta.flags),
+          ethHeader,
+          ipBytes,
+          tcpBytes: tcpNoCsum,
+          optionsBytes: options.bytes,
+        };
+      }
+
+      // -------------------- Visual Packet Rendering --------------------
+      function svgEl(tag, attrs) {
+        const e = document.createElementNS(NS, tag);
+        for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, String(v));
+        return e;
+      }
+
+      function chip(g, x, y, txt, fill, width) {
+        const r = svgEl("rect", { x, y, width, height: 13, rx: 3, fill, stroke: "#2f4058" });
+        const t = svgEl("text", { x: x + 3, y: y + 10, "font-size": 8, fill: "#e6edf3" });
+        t.textContent = txt;
+        g.append(r, t);
+      }
+
+      function addHeaderDetailChips(group, x, y, w, list, color) {
+        let cx = x + 4;
+        let cy = y + 3;
+        for (const item of list) {
+          const tw = Math.min(w - 8, Math.max(30, item.length * 4.7));
+          if (cx + tw > x + w - 4) {
+            cx = x + 4;
+            cy += 14;
+          }
+          chip(group, cx, cy, item, color, tw);
+          cx += tw + 4;
+        }
+      }
+
+      function pduGroup(packet, dir) {
+        const p = packet.meta;
+        const widthBase = 260 + Math.min(160, p.payloadLen / 9);
+        const headerBytes = 14 + p.ipHeaderLen + p.tcpHeaderLen + 4;
+        const total = Math.max(1, headerBytes + p.payloadLen);
+        let headerW = Math.round((headerBytes / total) * widthBase);
+        headerW = clamp(headerW, 80, widthBase - 30);
+        const payloadW = widthBase - headerW;
+        const h = 108;
+
+        const g = svgEl("g", {});
+        const outer = svgEl("rect", { x: 0, y: 0, width: widthBase, height: h, rx: 10, fill: "#101a29", stroke: dir === "tx" ? "#2d4f7c" : "#2d6567" });
+        const hdr = svgEl("rect", { x: 0, y: 0, width: headerW, height: h, fill: "#16263b", stroke: "#2a3f5f" });
+        const pay = svgEl("rect", { x: headerW, y: 0, width: payloadW, height: h, fill: "#10261f", stroke: "#2e5e4d" });
+        g.append(outer, hdr, pay);
+
+        const title = svgEl("text", { x: 6, y: 11, "font-size": 9, fill: "#d7e6fa" });
+        title.textContent = `${p.kind} #${p.segIndex || "-"} ${p.flagLabel} seq=${p.seq} ack=${p.ack}`;
+        g.append(title);
+
+        // Ethernet header box
+        const eBox = svgEl("rect", { x: 4, y: 16, width: headerW - 8, height: 24, fill: "#1a2a3f", stroke: "#2d476d" });
+        g.append(eBox);
+        const eLbl = svgEl("text", { x: 8, y: 25, "font-size": 8, fill: "#b9d3f3" });
+        eLbl.textContent = "Ethernet";
+        g.append(eLbl);
+        if (ui.showEth.checked) {
+          addHeaderDetailChips(g, 4, 27, headerW - 8, [
+            "Dst=02:00:00:00:00:02",
+            "Src=02:00:00:00:00:01",
+            `Type=${p.ipVersion === "v4" ? "0x0800" : "0x86DD"}`,
+            `FCS=${toHex(p.fcs, 8)}`
+          ], "#223654");
+        }
+
+        // IP header box
+        const iBox = svgEl("rect", { x: 4, y: 43, width: headerW - 8, height: 26, fill: "#182a40", stroke: "#30527a" });
+        g.append(iBox);
+        const iLbl = svgEl("text", { x: 8, y: 52, "font-size": 8, fill: "#b9d3f3" });
+        iLbl.textContent = p.ipVersion === "v4" ? "IPv4" : "IPv6";
+        g.append(iLbl);
+        if (ui.showIp.checked) {
+          const ipFields = p.ipVersion === "v4"
+            ? [`Src=${p.srcIP}`, `Dst=${p.dstIP}`, "TTL=64", "Proto=TCP", `TotLen=${p.ipBytes.length + p.tcpBytes.length}`, `HdrChk=${toHex(p.ipChecksum || 0, 4)}`]
+            : [`Src=${p.srcIP}`, `Dst=${p.dstIP}`, "Hop=64", "NextHdr=TCP", `PayloadLen=${p.tcpBytes.length}`];
+          addHeaderDetailChips(g, 4, 54, headerW - 8, ipFields, "#1f3a5a");
+        }
+
+        // TCP header box
+        const tBox = svgEl("rect", { x: 4, y: 71, width: headerW - 8, height: 32, fill: "#142235", stroke: "#355376" });
+        g.append(tBox);
+        const tLbl = svgEl("text", { x: 8, y: 80, "font-size": 8, fill: "#b9d3f3" });
+        tLbl.textContent = "TCP";
+        g.append(tLbl);
+        if (ui.showTcp.checked) {
+          addHeaderDetailChips(g, 4, 82, headerW - 8, [
+            `SrcPort=${p.srcPort}`,
+            `DstPort=${p.dstPort}`,
+            `Seq=${p.seq}`,
+            `Ack=${p.ack}`,
+            `Offset=${p.dataOffset}`,
+            `Flags=${p.flagLabel}`,
+            `Window=${p.window}`,
+            `Checksum=${toHex(p.tcpChecksum, 4)}`,
+            `UrgPtr=${p.urgentPtr}`,
+            `Options=${p.optionsLabel}`
+          ], "#1d3651");
+        }
+
+        const pLbl = svgEl("text", { x: headerW + payloadW / 2, y: 56, "text-anchor": "middle", "font-size": 10, fill: "#d7f5e3" });
+        pLbl.textContent = `${p.payloadLen} B payload`;
+        g.append(pLbl);
+
+        if (p.sackBlocks && p.sackBlocks.length > 0) {
+          const sack = svgEl("text", { x: headerW + payloadW / 2, y: 72, "text-anchor": "middle", "font-size": 9, fill: "#d8c7ff" });
+          sack.textContent = `SACK ${p.sackBlocks.map((b) => `[${b.left},${b.right})`).join(" ")}`;
+          g.append(sack);
+        }
+
+        if (p.corrupted) {
+          const bad = svgEl("text", { x: widthBase - 6, y: 12, "text-anchor": "end", "font-size": 9, fill: "#ff8d8d" });
+          bad.textContent = "CORRUPTED";
+          g.append(bad);
+        }
+        if (p.retransmit) {
+          const rt = svgEl("text", { x: widthBase - 6, y: 24, "text-anchor": "end", "font-size": 9, fill: "#ffd89a" });
+          rt.textContent = "RETX";
+          g.append(rt);
+        }
+        return { group: g, width: widthBase, height: h };
+      }
+
+      function createAnimatedPacket(meta, dir, arriveCb) {
+        const { group, width } = pduGroup({ meta }, dir);
+        // Use widely separated directional lanes so packets do not visually stack into
+        // what looks like duplicate boxes.
+        const txLanes = [420, 540];
+        const rxLanes = [220, 340];
+        const lane = sim.nextColorLane++;
+        const y = dir === "tx" ? txLanes[lane % txLanes.length] : rxLanes[lane % rxLanes.length];
+        const x0 = dir === "tx" ? 320 : 1080 - width;
+        meta.pduWidth = width;
+        meta.laneY = y;
+        group.setAttribute("transform", `translate(${x0},${y})`);
+        ui.packetLayer.appendChild(group);
+
+        const jitter = ui.jitterOn.checked ? (Math.random() * (parseInt(ui.jitterMs.value, 10) || 0)) : 0;
+        const extra = (meta.extraDelayMs || 0) + jitter;
+        const duration = Math.max(500, sim.oneWayMs + extra);
+        const packet = {
+          id: `${meta.kind}-${meta.seq}-${sim.frameIndex}`,
+          dir,
+          meta,
+          group,
+          width,
+          // Transit motion is intentionally non-linear to model path dynamics outside TCP control.
+          progress: 0,
+          baseDuration: duration,
+          speedFactor: 1,
+          pauseRemainMs: 0,
+          nextMotionUpdateMs: 200 + Math.random() * 500,
+          arriveCb,
+          done: false,
+          removeAt: null,
+          // If this packet is configured to drop, lose it at a random point
+          // along the path instead of only at endpoint.
+          dropAt: meta.dropped
+            ? (Number.isFinite(meta.dropAt) ? clamp(meta.dropAt, 0.02, 0.98) : (0.12 + Math.random() * 0.76))
+            : null,
+          lostHandled: false,
+        };
+        sim.packets.push(packet);
+        return packet;
+      }
+
+      function spawnLostLabel(x, y) {
+        const g = svgEl("g", {});
+        const bg = svgEl("rect", {
+          x: x - 21,
+          y: y - 14,
+          width: 42,
+          height: 18,
+          rx: 5,
+          fill: "#3a1414",
+          stroke: "#ff8d8d",
+        });
+        const label = svgEl("text", {
+          x,
+          y: y - 1,
+          "text-anchor": "middle",
+          "font-size": 12,
+          fill: "#ffd4d4",
+        });
+        label.textContent = "lost";
+        g.append(bg, label);
+        ui.packetLayer.appendChild(g);
+        // Keep visible for one single trip in real time at current speed.
+        const oneTripRealMs = sim.oneWayMs / Math.max(0.01, speedValue());
+        setTimeout(() => {
+          if (g.parentNode) g.parentNode.removeChild(g);
+        }, oneTripRealMs);
+      }
+
+      // -------------------- Core Simulation --------------------
+      function resetState() {
+        sim.running = false;
+        sim.paused = false;
+        sim.lastRealTs = 0;
+        sim.clock = 0;
+        sim.conn = "CLOSED";
+        sim.queueBytes = 0;
+        sim.initialQueueBytes = 0;
+        sim.ackedBytes = 0;
+        sim.segIndex = 0;
+        sim.frameIndex = 0;
+        sim.events = [];
+        sim.packets = [];
+        sim.inFlight.clear();
+        sim.sender.iss = 1000;
+        sim.sender.una = 1000;
+        sim.sender.nxt = 1000;
+        sim.sender.cwndMss = initCwndValue();
+        sim.sender.ssthreshMss = ssthreshValue();
+        sim.sender.dupAcks = 0;
+        sim.sender.lastAck = sim.sender.una;
+        sim.sender.inFastRecovery = false;
+        sim.sender.recoverSeq = sim.sender.una;
+        sim.receiver.iss = 5000;
+        sim.receiver.nxt = 5001;
+        sim.receiver.wnd = rwndValue();
+        sim.receiver.outOfOrder.clear();
+        sim.delayedAckState = null;
+        sim.persistState = null;
+        sim.keepAliveState = { lastDataAckClock: 0, probes: 0, waiting: false };
+        sim.timeWaitUntil = 0;
+        sim.scoreboard = [];
+        sim.eventLogLines = [];
+        sim.deliveryCompleteLogged = false;
+        sim.faults.drop = parseIndexList(ui.dropIdx.value);
+        sim.faults.reorder = parseIndexList(ui.reorderIdx.value);
+        sim.faults.dup = parseIndexList(ui.dupIdx.value);
+        sim.faults.corrupt = parseIndexList(ui.corruptIdx.value);
+        sim.nextColorLane = 0;
+        ui.packetLayer.innerHTML = "";
+        ui.mathPanel.innerHTML = "";
+        ui.eventLogPanel.textContent = "";
+        ui.hudMsg.textContent = "Ready";
+        updateDerivedUi();
+        updateBars();
+        updateStatus();
+      }
+
+      function updateDerivedUi() {
+        ui.payloadOut.textContent = `${payloadSliderBytes()} B`;
+        ui.speedOut.textContent = `${speedValue().toFixed(2).replace(/\.00$/, "")}x`;
+        ui.lossProbOut.textContent = `${lossProbValue().toFixed(0)}%`;
+        effectiveMss();
+      }
+
+      function applyTooltips() {
+        const tips = {
+          speed: "Simulation speed multiplier",
+          ipver: "Switch between IPv4 and IPv6 packet construction",
+          mtu: "Link MTU used for effective MSS calculation",
+          payload: "Amount of sender data queued for transmission",
+          mss: "Configured MSS upper bound before MTU reduction",
+          rwnd: "Advertised receiver window (flow control)",
+          senderBufCap: "Sender-side egress buffer capacity; overflow causes congestion loss",
+          receiverBufCap: "Receiver-side reassembly buffer capacity; overflow causes congestion loss",
+          initCwnd: "Initial congestion window in MSS units",
+          ssthresh: "Slow-start threshold; use inf for unbounded start",
+          optMSS: "Include MSS option in SYN segments",
+          optSACK: "Enable SACK permitted and SACK block signaling",
+          optWS: "Include window scale option in SYN segments",
+          optTS: "Include RFC timestamps option",
+          delayedAck: "ACK every 2 segments or timer when enabled",
+          nagle: "Coalesce small writes while unacked data exists",
+          pshCoalesce: "Allow application writes to coalesce before send",
+          keepAlive: "Send periodic keep-alive probes when idle",
+          persist: "Probe zero-window peer with exponential backoff",
+          dropIdx: "Comma-separated data segment indexes to drop",
+          reorderIdx: "Comma-separated segment indexes delayed to force reordering",
+          dupIdx: "Comma-separated segment indexes to duplicate",
+          corruptIdx: "Comma-separated segment indexes to corrupt for bad FCS",
+          lossProb: "Probability that each outbound data segment is lost in transit",
+          jitterOn: "Enable variable one-way delay",
+          jitterMs: "Maximum random extra delay in ms",
+          showEth: "Show/hide Ethernet detail chips in in-flight PDUs",
+          showIp: "Show/hide IP detail chips in in-flight PDUs",
+          showTcp: "Show/hide TCP detail chips in in-flight PDUs",
+        };
+        for (const [id, text] of Object.entries(tips)) {
+          const el = document.getElementById(id);
+          if (el) el.title = text;
+        }
+      }
+
+      function updateBars() {
+        const qRatio = sim.initialQueueBytes ? sim.queueBytes / sim.initialQueueBytes : 0;
+        ui.senderQueueBar.setAttribute("width", String(Math.round(198 * clamp(qRatio, 0, 1))));
+        ui.senderQueueText.textContent = `${bytesFmt(sim.queueBytes)} queued`;
+
+        const senderBufCap = senderBufCapValue();
+        const senderBufUsed = senderBufferOccupancyBytes();
+        const senderBufRatio = clamp(senderBufUsed / Math.max(1, senderBufCap), 0, 1);
+        ui.senderBufBar.setAttribute("width", String(Math.round(198 * senderBufRatio)));
+        ui.senderBufText.textContent = `${bytesFmt(senderBufUsed)} / ${bytesFmt(senderBufCap)}`;
+
+        const receiverBufCap = receiverBufCapValue();
+        const receiverBufUsed = receiverBufferOccupancyBytes();
+        const receiverBufRatio = clamp(receiverBufUsed / Math.max(1, receiverBufCap), 0, 1);
+        ui.receiverBufBar.setAttribute("width", String(Math.round(198 * receiverBufRatio)));
+        ui.receiverBufText.textContent = `${bytesFmt(receiverBufUsed)} / ${bytesFmt(receiverBufCap)}`;
+
+        sim.receiver.wnd = Math.max(0, rwndValue() - receiverBufUsed);
+        const wndRatio = clamp(sim.receiver.wnd / Math.max(1, 65535), 0, 1);
+        ui.receiverWndBar.setAttribute("width", String(Math.round(198 * wndRatio)));
+        ui.receiverWndText.textContent = `rwnd=${sim.receiver.wnd} B`;
+
+        if (sim.timeWaitUntil > sim.clock) {
+          const total = sim.baseRttMs * 2;
+          const rem = sim.timeWaitUntil - sim.clock;
+          ui.timeWaitBar.setAttribute("width", String(Math.round(198 * rem / total)));
+          ui.timeWaitText.textContent = `${Math.ceil(rem / 1000)}s`;
+        } else {
+          ui.timeWaitBar.setAttribute("width", "0");
+          ui.timeWaitText.textContent = "idle";
+        }
+
+        const oldest = oldestUnacked();
+        if (oldest) {
+          const elapsed = sim.clock - oldest.lastSentClock;
+          const rem = Math.max(0, sim.rtoMs - elapsed);
+          ui.rtoBar.setAttribute("width", String(Math.round(198 * rem / sim.rtoMs)));
+          ui.rtoText.textContent = `${Math.ceil(rem / 1000)}s`;
+        } else {
+          ui.rtoBar.setAttribute("width", "0");
+          ui.rtoText.textContent = "idle";
+        }
+      }
+
+      function updateStatus() {
+        const flight = flightBytes();
+        ui.stConn.textContent = sim.conn;
+        ui.stCwnd.textContent = `${sim.sender.cwndMss.toFixed(2)} MSS`;
+        ui.stSsth.textContent = Number.isFinite(sim.sender.ssthreshMss) ? `${sim.sender.ssthreshMss.toFixed(2)} MSS` : "inf";
+        ui.stFlight.textContent = bytesFmt(flight);
+        ui.stQueue.textContent = bytesFmt(sim.queueBytes);
+        ui.stAcked.textContent = bytesFmt(sim.ackedBytes);
+        ui.stRto.textContent = oldestUnacked() ? `${Math.ceil(sim.rtoMs / 1000)}s base` : "idle";
+        ui.stDupAck.textContent = String(sim.sender.dupAcks);
+        ui.stFr.textContent = sim.sender.inFastRecovery ? "on" : "off";
+        ui.stFr.className = `mono ${sim.sender.inFastRecovery ? "warn" : "ok"}`;
+        ui.scoreboard.textContent = sim.scoreboard.length
+          ? sim.scoreboard.map((b) => `[${b.left}, ${b.right})`).join("\n")
+          : "(empty)";
+      }
+
+      function scheduleEvent(delayMs, fn) {
+        sim.events.push({ at: sim.clock + delayMs, fn });
+      }
+
+      function processEvents() {
+        sim.events.sort((a, b) => a.at - b.at);
+        while (sim.events.length > 0 && sim.events[0].at <= sim.clock) {
+          const ev = sim.events.shift();
+          ev.fn();
+        }
+      }
+
+      function flightBytes() {
+        let sum = 0;
+        for (const seg of sim.inFlight.values()) sum += seg.len;
+        return sum;
+      }
+
+      function senderBufferOccupancyBytes() {
+        let sum = 0;
+        for (const p of sim.packets) {
+          if (p.dir !== "tx" || p.done) continue;
+          if (!p.meta || p.meta.kind !== "DATA") continue;
+          sum += p.meta.payloadLen || p.meta.len || 0;
+        }
+        return sum;
+      }
+
+      function receiverBufferOccupancyBytes() {
+        let sum = 0;
+        for (const len of sim.receiver.outOfOrder.values()) sum += len;
+        return sum;
+      }
+
+      function oldestUnacked() {
+        let oldest = null;
+        for (const seg of sim.inFlight.values()) {
+          if (!oldest || seg.seq < oldest.seq) oldest = seg;
+        }
+        return oldest;
+      }
+
+      function setHud(msg) {
+        const line = `[${(sim.clock / 1000).toFixed(2)}s] ${msg}`;
+        ui.hudMsg.textContent = line;
+        sim.eventLogLines.push(line);
+        if (sim.eventLogLines.length > 300) sim.eventLogLines.shift();
+        ui.eventLogPanel.textContent = sim.eventLogLines.join("\n");
+        ui.eventLogPanel.scrollTop = ui.eventLogPanel.scrollHeight;
+      }
+
+      function setIntent(side, text, ttlMs = 2200) {
+        const slot = { text, until: sim.clock + ttlMs };
+        if (side === "sender") sim.senderIntentOverride = slot;
+        else sim.receiverIntentOverride = slot;
+      }
+
+      // Intentions align with RFC 9293 event processing notions:
+      // OPEN/SEND/RECEIVE/CLOSE, SEGMENT ARRIVES, and Timeouts.
+      function deriveIntentions() {
+        if (sim.senderIntentOverride && sim.clock > sim.senderIntentOverride.until) sim.senderIntentOverride = null;
+        if (sim.receiverIntentOverride && sim.clock > sim.receiverIntentOverride.until) sim.receiverIntentOverride = null;
+
+        let senderIntent = "idle";
+        let receiverIntent = "idle";
+
+        if (sim.conn === "CLOSED") {
+          senderIntent = "CLOSED: waiting for OPEN";
+          receiverIntent = "CLOSED/LISTEN: waiting for SYN";
+        } else if (sim.conn === "SYN-SENT") {
+          senderIntent = "OPEN: sent SYN, waiting for SYN-ACK";
+          receiverIntent = "SEGMENT ARRIVES: prepare SYN-ACK";
+        } else if (sim.conn === "ESTABLISHED") {
+          if (sim.receiver.wnd <= 0 && sim.queueBytes > 0) {
+            senderIntent = ui.persist.checked ? "Window closed: persist probing" : "Window closed: waiting for rwnd update";
+          } else if (sim.inFlight.size > 0) {
+            senderIntent = "SEND: waiting for ACK";
+          } else if (sim.queueBytes > 0) {
+            senderIntent = "SEND: segmenting and transmitting";
+          } else if (ui.keepAlive.checked) {
+            senderIntent = "Idle: keep-alive monitoring";
+          } else {
+            senderIntent = "Idle ESTABLISHED";
+          }
+
+          if (sim.receiver.outOfOrder.size > 0) {
+            receiverIntent = ui.optSACK.checked ? "RECEIVE: buffering out-of-order, sending ACK+SACK" : "RECEIVE: buffering out-of-order, sending dupACK";
+          } else {
+            receiverIntent = "RECEIVE: cumulative ACK behavior";
+          }
+        } else if (sim.conn === "FIN-WAIT-1") {
+          senderIntent = "CLOSE: FIN sent, waiting ACK";
+          receiverIntent = "CLOSE path: ACK and FIN generation";
+        } else if (sim.conn === "FIN-WAIT-2") {
+          senderIntent = "CLOSE: waiting peer FIN";
+          receiverIntent = "CLOSE path: peer FIN in progress";
+        } else if (sim.conn === "TIME-WAIT") {
+          senderIntent = "TIME-WAIT: absorb late duplicates";
+          receiverIntent = "Connection closing complete";
+        }
+
+        if (sim.senderIntentOverride) senderIntent = sim.senderIntentOverride.text;
+        if (sim.receiverIntentOverride) receiverIntent = sim.receiverIntentOverride.text;
+
+        ui.senderIntentText.textContent = `intent: ${senderIntent}`;
+        ui.receiverIntentText.textContent = `intent: ${receiverIntent}`;
+      }
+
+      function showMath(meta) {
+        ui.mathPanel.innerHTML = "";
+        const addPre = (title, lines) => {
+          const h = document.createElement("div");
+          h.className = "tiny";
+          h.textContent = title;
+          const p = document.createElement("pre");
+          p.textContent = lines.join("\n");
+          ui.mathPanel.append(h, p);
+        };
+        addPre("TCP checksum (pseudo-header + TCP header + payload)", meta.tcpChecksumLines);
+        if (meta.ipVersion === "v4") addPre("IPv4 header checksum", meta.ipChecksumLines);
+        const fcsShow = [
+          `frame bytes (without FCS): ${meta.frameNoFcs.length}`,
+          `CRC32 FCS = ${toHex(meta.fcs, 8)}`,
+        ];
+        addPre("Ethernet FCS (CRC32)", fcsShow);
+      }
+
+      function packetFields(kind, seq, ack, len, retransmit, sackBlocks) {
+        const payload = makePayload(len, seq + (retransmit ? 7 : 3));
+        const window = rwndValue() & 0xffff;
+        const flags = (
+          (kind === "SYN" ? FLAGS.SYN : 0) |
+          (kind === "SYN-ACK" ? (FLAGS.SYN | FLAGS.ACK) : 0) |
+          (kind === "ACK" ? FLAGS.ACK : 0) |
+          (kind === "DATA" ? (FLAGS.ACK | (ui.pshCoalesce.checked ? FLAGS.PSH : 0)) : 0) |
+          (kind === "FIN" ? (FLAGS.FIN | FLAGS.ACK) : 0) |
+          (kind === "KA" ? FLAGS.ACK : 0) |
+          (kind === "PERSIST" ? FLAGS.ACK : 0)
+        );
+        return {
+          kind,
+          seq,
+          ack,
+          len,
+          flags,
+          srcPort: parseInt(ui.srcPort.value, 10) || 50000,
+          dstPort: parseInt(ui.dstPort.value, 10) || 80,
+          window,
+          urgentPtr: 0,
+          payload,
+          sackBlocks,
+          retransmit: !!retransmit,
+          segIndex: null,
+          extraDelayMs: 0,
+          corrupted: false,
+          dropped: false,
+        };
+      }
+
+      function senderDataSegment(len, retransmit, seqOverride) {
+        const seq = Number.isFinite(seqOverride) ? seqOverride : sim.sender.nxt;
+        const p = packetFields("DATA", seq, sim.receiver.nxt, len, retransmit, null);
+        if (!retransmit) {
+          sim.segIndex += 1;
+          p.segIndex = sim.segIndex;
+          if (sim.faults.drop.has(p.segIndex)) {
+            p.dropped = true;
+            p.lossReason = "fault injector drop";
+          }
+          if (sim.faults.reorder.has(p.segIndex)) p.extraDelayMs += sim.oneWayMs * 0.6;
+          if (sim.faults.corrupt.has(p.segIndex)) p.corrupted = true;
+        }
+        return p;
+      }
+
+      function transmit(meta, dir, onArrive) {
+        if (dir === "tx" && meta.kind === "DATA" && !meta.dropped) {
+          const senderCap = senderBufCapValue();
+          const senderUsed = senderBufferOccupancyBytes();
+          if (senderUsed + (meta.len || 0) > senderCap) {
+            meta.dropped = true;
+            meta.dropAt = 0.05 + Math.random() * 0.22;
+            meta.lossReason = "[CONG-SND] sender congestion (buffer overflow)";
+          }
+        }
+        // Random probabilistic loss for outbound DATA segments.
+        if (dir === "tx" && meta.kind === "DATA" && !meta.dropped) {
+          if (Math.random() * 100 < lossProbValue()) {
+            meta.dropped = true;
+            meta.lossReason = "random loss probability";
+          }
+        }
+        sim.frameIndex += 1;
+        const frame = buildFrame(meta);
+        const merged = { ...meta, ...frame };
+        if (meta.corrupted) {
+          // Flip a byte but keep original FCS -> receiver detects mismatch.
+          const i = 30;
+          if (merged.frameNoFcs[i] !== undefined) merged.frameNoFcs[i] = merged.frameNoFcs[i] ^ 0x01;
+        }
+        showMath(merged);
+        const packet = createAnimatedPacket(merged, dir, () => onArrive(merged));
+        return packet;
+      }
+
+      function verifyFcs(frameMeta) {
+        const calc = CRC32(frameMeta.frameNoFcs);
+        return calc === frameMeta.fcs;
+      }
+
+      function ackWithOptionalSack(ackNo, sackBlocks) {
+        const ackMeta = packetFields("ACK", sim.receiver.nxt, ackNo, 0, false, sackBlocks);
+        return ackMeta;
+      }
+
+      function sendAckNow(ackNo, sackBlocks) {
+        const ack = ackWithOptionalSack(ackNo, sackBlocks);
+        transmit(ack, "rx", onAckArriveSender);
+      }
+
+      function receiverSackBlocks() {
+        const blocks = [];
+        const keys = [...sim.receiver.outOfOrder.keys()].sort((a, b) => a - b);
+        for (const k of keys) {
+          const len = sim.receiver.outOfOrder.get(k);
+          blocks.push({ left: k, right: k + len });
+        }
+        return blocks;
+      }
+
+      function onDataArriveReceiver(frameMeta) {
+        sim.keepAliveState.lastDataAckClock = sim.clock;
+        if (!verifyFcs(frameMeta)) {
+          setHud(`frame dropped due to bad FCS (seg #${frameMeta.segIndex || "-"})`);
+          setIntent("receiver", "SEGMENT ARRIVES: drop bad FCS");
+          return;
+        }
+        if (frameMeta.dropped) {
+          setHud(`segment #${frameMeta.segIndex} dropped by fault injector`);
+          setIntent("receiver", "SEGMENT ARRIVES: segment dropped");
+          return;
+        }
+
+        const seq = frameMeta.seq;
+        const len = frameMeta.payloadLen;
+        if (len > 0) {
+          if (seq === sim.receiver.nxt) {
+            sim.receiver.nxt += len;
+            // Promote buffered out-of-order contiguous segments
+            let moved = true;
+            while (moved) {
+              moved = false;
+              const v = sim.receiver.outOfOrder.get(sim.receiver.nxt);
+              if (v) {
+                sim.receiver.outOfOrder.delete(sim.receiver.nxt);
+                sim.receiver.nxt += v;
+                moved = true;
+              }
+            }
+          } else if (seq > sim.receiver.nxt) {
+            const receiverCap = receiverBufCapValue();
+            const receiverUsed = receiverBufferOccupancyBytes();
+            if (receiverUsed + len > receiverCap) {
+              const lostX = 1080 - (frameMeta.pduWidth || 140) / 2;
+              const lostY = (frameMeta.laneY || 420) - 8;
+              spawnLostLabel(lostX, lostY);
+              setHud(`[CONG-RCV] segment #${frameMeta.segIndex || "-"} lost at receiver congestion buffer`);
+              setIntent("receiver", "RECEIVE: drop out-of-order segment (buffer full)");
+              const sacks = ui.optSACK.checked ? receiverSackBlocks() : [];
+              sendAckNow(sim.receiver.nxt, sacks);
+              return;
+            }
+            sim.receiver.outOfOrder.set(seq, len);
+          }
+        }
+
+        const sacks = ui.optSACK.checked ? receiverSackBlocks() : [];
+        setIntent("receiver", sacks.length ? "RECEIVE: update ACK/SACK view" : "RECEIVE: generate cumulative ACK");
+        if (ui.ackEvery.checked && !ui.delayedAck.checked) {
+          sendAckNow(sim.receiver.nxt, sacks);
+          return;
+        }
+
+        // Delayed ACK mode
+        if (!sim.delayedAckState) {
+          sim.delayedAckState = { count: 1, ackNo: sim.receiver.nxt, sacks };
+          scheduleEvent(200, () => {
+            if (sim.delayedAckState) {
+              sendAckNow(sim.delayedAckState.ackNo, sim.delayedAckState.sacks);
+              sim.delayedAckState = null;
+            }
+          });
+        } else {
+          sim.delayedAckState.count += 1;
+          sim.delayedAckState.ackNo = sim.receiver.nxt;
+          sim.delayedAckState.sacks = sacks;
+          if (sim.delayedAckState.count >= 2) {
+            sendAckNow(sim.delayedAckState.ackNo, sim.delayedAckState.sacks);
+            sim.delayedAckState = null;
+          }
+        }
+      }
+
+      function onAckArriveSender(frameMeta) {
+        if (!verifyFcs(frameMeta) || frameMeta.dropped) return;
+        const ackNo = frameMeta.ack;
+        const newlyAcked = [];
+        for (const [seq, seg] of sim.inFlight.entries()) {
+          if (seq + seg.len <= ackNo) newlyAcked.push(seq);
+        }
+        let ackedBytes = 0;
+        for (const seq of newlyAcked) {
+          const s = sim.inFlight.get(seq);
+          ackedBytes += s.len;
+          sim.inFlight.delete(seq);
+        }
+        if (ackedBytes > 0) {
+          setIntent("sender", "RECEIVE: ACK advanced window");
+          sim.sender.una = ackNo;
+          sim.sender.dupAcks = 0;
+          sim.sender.lastAck = ackNo;
+          sim.ackedBytes += ackedBytes;
+          sim.keepAliveState.lastDataAckClock = sim.clock;
+          setHud(`ACK advanced to ${ackNo} (+${ackedBytes}B), queue=${sim.queueBytes}B, flight=${flightBytes()}B`);
+          // Reno-like fast recovery exit: leave recovery once cumulative ACK
+          // passes the sequence we had outstanding at recovery entry.
+          if (sim.sender.inFastRecovery && ackNo >= sim.sender.recoverSeq) {
+            sim.sender.inFastRecovery = false;
+            sim.sender.cwndMss = Math.max(1, sim.sender.ssthreshMss);
+            setHud(`fast recovery exit at ACK ${ackNo}`);
+          } else if (!sim.sender.inFastRecovery) {
+            // Congestion control (teaching model)
+            if (sim.sender.cwndMss < sim.sender.ssthreshMss) {
+              sim.sender.cwndMss += 1; // slow start
+            } else {
+              sim.sender.cwndMss += 1 / Math.max(1, sim.sender.cwndMss); // CA
+            }
+          }
+          if (!sim.deliveryCompleteLogged && sim.queueBytes === 0 && sim.inFlight.size === 0) {
+            sim.deliveryCompleteLogged = true;
+            setHud("all queued data delivered");
+          }
+        } else if (ackNo === sim.sender.lastAck) {
+          setIntent("sender", "RECEIVE: duplicate ACK observed");
+          sim.sender.dupAcks += 1;
+          if (sim.sender.dupAcks >= 3 && !sim.sender.inFastRecovery) {
+            // Fast retransmit (single entry per recovery episode)
+            const target = sim.sender.una;
+            const seg = sim.inFlight.get(target);
+            if (seg) {
+              setHud(`fast retransmit seq=${target}`);
+              setIntent("sender", "Timeout recovery: fast retransmit");
+              sim.sender.ssthreshMss = Math.max(2, sim.sender.cwndMss / 2);
+              sim.sender.cwndMss = sim.sender.ssthreshMss + 3;
+              sim.sender.inFastRecovery = true;
+              sim.sender.recoverSeq = sim.sender.nxt;
+              retransmitSegment(seg);
+            }
+          } else if (sim.sender.inFastRecovery) {
+            // In fast recovery, duplicate ACKs inflate cwnd but should not
+            // trigger repeated retransmit of the same hole.
+            sim.sender.cwndMss += 1;
+          }
+        }
+
+        sim.scoreboard = frameMeta.sackBlocks || [];
+      }
+
+      function retransmitSegment(seg) {
+        const m = senderDataSegment(seg.len, true, seg.seq);
+        m.segIndex = seg.segIndex;
+        transmit(m, "tx", onDataArriveReceiver);
+        seg.lastSentClock = sim.clock;
+        setIntent("sender", "Resend as timer/dupACK triggers");
+      }
+
+      function trySendDataBurst() {
+        if (sim.conn !== "ESTABLISHED") return;
+        if (sim.queueBytes <= 0) return;
+
+        // Nagle simplification: if enabled and unacked exists, hold tiny writes below MSS.
+        if (ui.nagle.checked && sim.inFlight.size > 0 && sim.queueBytes < effectiveMss()) return;
+
+        if (sim.receiver.wnd <= 0) {
+          if (ui.persist.checked) ensurePersistTimer();
+          setIntent("sender", ui.persist.checked ? "Managing window: zero-window persist mode" : "Managing window: rwnd zero, waiting");
+          return;
+        }
+
+        const eff = effectiveMss();
+        let sendBudget = Math.max(0, Math.min(sim.sender.cwndMss * eff, sim.receiver.wnd) - flightBytes());
+        if (sendBudget <= 0) return;
+
+        while (sim.queueBytes > 0 && sendBudget > 0) {
+          let len = Math.min(eff, sim.queueBytes, sendBudget);
+          if (ui.pshCoalesce.checked && sim.queueBytes < eff) len = sim.queueBytes;
+          if (len <= 0) break;
+
+          const meta = senderDataSegment(len, false, undefined);
+          setIntent("sender", "SEND: segment emitted");
+          const segRef = { seq: meta.seq, len, segIndex: meta.segIndex, lastSentClock: sim.clock };
+          sim.inFlight.set(meta.seq, segRef);
+          transmit(meta, "tx", onDataArriveReceiver);
+          sim.sender.nxt += len;
+          sim.queueBytes -= len;
+          sendBudget -= len;
+
+          // Duplicate fault injection
+          if (meta.segIndex && sim.faults.dup.has(meta.segIndex)) {
+            scheduleEvent(200, () => {
+              const clone = { ...meta, retransmit: true, extraDelayMs: 200 };
+              transmit(clone, "tx", onDataArriveReceiver);
+            });
+          }
+        }
+      }
+
+      function ensurePersistTimer() {
+        if (sim.persistState) return;
+        sim.persistState = { backoff: 1000, nextAt: sim.clock + 1000 };
+      }
+
+      function processPersist() {
+        if (!ui.persist.checked || sim.conn !== "ESTABLISHED") return;
+        if (sim.queueBytes <= 0) return;
+        if (sim.receiver.wnd > 0) {
+          sim.persistState = null;
+          return;
+        }
+        ensurePersistTimer();
+        if (sim.persistState && sim.clock >= sim.persistState.nextAt) {
+          const probe = packetFields("PERSIST", sim.sender.una ? sim.sender.una - 1 : sim.sender.nxt, sim.receiver.nxt, 1, false, null);
+          probe.payload = [0xab];
+          transmit(probe, "tx", onDataArriveReceiver);
+          setHud("persist probe sent");
+          setIntent("sender", "Timeouts: persist probe sent");
+          sim.persistState.backoff = Math.min(16000, sim.persistState.backoff * 2);
+          sim.persistState.nextAt = sim.clock + sim.persistState.backoff;
+        }
+      }
+
+      function processKeepAlive() {
+        if (!ui.keepAlive.checked || sim.conn !== "ESTABLISHED") return;
+        if (sim.queueBytes > 0 || sim.inFlight.size > 0) return;
+        const idle = sim.clock - sim.keepAliveState.lastDataAckClock;
+        if (idle < 10000 || sim.keepAliveState.waiting) return;
+        const ka = packetFields("KA", Math.max(sim.sender.una - 1, 0), sim.receiver.nxt, 0, false, null);
+        transmit(ka, "tx", () => {
+          sendAckNow(sim.receiver.nxt, []);
+        });
+        sim.keepAliveState.waiting = true;
+        sim.keepAliveState.probes += 1;
+        scheduleEvent(sim.baseRttMs, () => {
+          sim.keepAliveState.waiting = false;
+        });
+        setHud(`keep-alive probe #${sim.keepAliveState.probes}`);
+        setIntent("sender", "Keep-alive: probing idle peer");
+      }
+
+      function processRto() {
+        if (sim.conn !== "ESTABLISHED") return;
+        const oldest = oldestUnacked();
+        if (!oldest) return;
+        if (sim.clock - oldest.lastSentClock >= sim.rtoMs) {
+          setHud(`RTO timeout seq=${oldest.seq}`);
+          setIntent("sender", "Timeouts: retransmission timer expired");
+          sim.sender.ssthreshMss = Math.max(2, sim.sender.cwndMss / 2);
+          sim.sender.cwndMss = 1;
+          sim.sender.dupAcks = 0;
+          sim.sender.inFastRecovery = false;
+          retransmitSegment(oldest);
+        }
+      }
+
+      // -------------------- Handshake / Close --------------------
+      function startHandshake(autoData) {
+        if (sim.conn !== "CLOSED") return;
+        sim.conn = "SYN-SENT";
+        setIntent("sender", "OPEN: send SYN");
+        const syn = packetFields("SYN", sim.sender.nxt, 0, 0, false, null);
+        transmit(syn, "tx", () => {
+          // Receiver learns sender IRS from SYN and sets expected next seq.
+          // Without this, receiver ACK stays pinned and sender can stall on RTO.
+          sim.receiver.nxt = syn.seq + 1;
+          // Receiver got SYN -> send SYN-ACK
+          setIntent("receiver", "SEGMENT ARRIVES: send SYN-ACK");
+          const synAck = packetFields("SYN-ACK", sim.receiver.iss, sim.sender.nxt + 1, 0, false, null);
+          transmit(synAck, "rx", () => {
+            // Sender got SYN-ACK -> send ACK, established
+            setIntent("sender", "OPEN: complete 3-way handshake");
+            sim.sender.nxt += 1; // SYN consumed
+            sim.sender.una = sim.sender.nxt;
+            const ack = packetFields("ACK", sim.sender.nxt, sim.receiver.iss + 1, 0, false, null);
+            transmit(ack, "tx", () => {
+              sim.conn = "ESTABLISHED";
+              setHud("connection established");
+              setIntent("receiver", "Connection established");
+              if (autoData) trySendDataBurst();
+            });
+          });
+        });
+      }
+
+      function startClose() {
+        if (sim.conn !== "ESTABLISHED") return;
+        sim.conn = "FIN-WAIT-1";
+        setIntent("sender", "CLOSE: sending FIN");
+        const fin = packetFields("FIN", sim.sender.nxt, sim.receiver.nxt, 0, false, null);
+        transmit(fin, "tx", () => {
+          // receiver ACKs FIN and sends FIN
+          setIntent("receiver", "CLOSE: ACK then FIN");
+          const finAck = packetFields("ACK", sim.receiver.nxt, sim.sender.nxt + 1, 0, false, null);
+          transmit(finAck, "rx", () => {
+            sim.conn = "FIN-WAIT-2";
+            setIntent("sender", "CLOSE: waiting peer FIN");
+          });
+          const fin2 = packetFields("FIN", sim.receiver.nxt, sim.sender.nxt + 1, 0, false, null);
+          transmit(fin2, "rx", () => {
+            const lastAck = packetFields("ACK", sim.sender.nxt + 1, sim.receiver.nxt + 1, 0, false, null);
+            transmit(lastAck, "tx", () => {
+              sim.conn = "TIME-WAIT";
+              sim.timeWaitUntil = sim.clock + sim.baseRttMs * 2;
+              setIntent("sender", "TIME-WAIT: waiting 2xRTT");
+              scheduleEvent(sim.baseRttMs * 2, () => {
+                sim.conn = "CLOSED";
+                sim.timeWaitUntil = 0;
+                setHud("connection closed");
+                setIntent("sender", "CLOSED: connection released");
+                setIntent("receiver", "CLOSED: connection released");
+              });
+            });
+          });
+        });
+      }
+
+      // -------------------- Main Loop --------------------
+      function animatePackets() {
+        for (const p of sim.packets) {
+          if (p.done && p.removeAt !== null && sim.clock >= p.removeAt) {
+            if (p.group.parentNode) p.group.parentNode.removeChild(p.group);
+            p.removeAt = null;
+            continue;
+          }
+          if (p.done) continue;
+          // Randomly vary speed and occasional pause to represent variable routing/queuing.
+          if (p.pauseRemainMs > 0) {
+            p.pauseRemainMs = Math.max(0, p.pauseRemainMs - sim.stepDtMs);
+          } else {
+            p.nextMotionUpdateMs -= sim.stepDtMs;
+            if (p.nextMotionUpdateMs <= 0) {
+              // 0.45x..1.9x relative speed; ACK/data can momentarily speed up/slow down.
+              p.speedFactor = 0.45 + Math.random() * 1.45;
+              // Occasional short pause.
+              if (Math.random() < 0.15) {
+                p.pauseRemainMs = 80 + Math.random() * 260;
+              }
+              p.nextMotionUpdateMs = 220 + Math.random() * 700;
+            }
+            const dp = (sim.stepDtMs / p.baseDuration) * p.speedFactor;
+            p.progress = clamp(p.progress + dp, 0, 1);
+          }
+
+          const progress = p.progress;
+          const txStart = 320;
+          const txEnd = 1080 - p.width;
+          const x = p.dir === "tx"
+            ? txStart + (txEnd - txStart) * progress
+            : txEnd + (txStart - txEnd) * progress;
+          const t = p.group.getAttribute("transform");
+          const y = parseFloat(t.substring(t.indexOf(",") + 1).replace(")", "")) || 300;
+          p.group.setAttribute("transform", `translate(${x},${y})`);
+
+          // Mid-route loss handling: remove packet immediately where it is lost.
+          if (p.dropAt !== null && !p.lostHandled && progress >= p.dropAt) {
+            p.lostHandled = true;
+            p.done = true;
+            p.removeAt = null;
+            const lostX = x + (p.width / 2);
+            const lostY = y - 8;
+            if (p.group.parentNode) p.group.parentNode.removeChild(p.group);
+            spawnLostLabel(lostX, lostY);
+            const reason = p.meta.lossReason ? ` (${p.meta.lossReason})` : "";
+            setHud(`segment #${p.meta.segIndex || "-"} lost in transit${reason}`);
+            setIntent("receiver", "SEGMENT ARRIVES: segment lost in transit");
+            continue;
+          }
+
+          if (progress >= 1) {
+            p.done = true;
+            p.group.style.opacity = "0.6";
+            p.removeAt = sim.clock + 1200;
+            p.arriveCb();
+          }
+        }
+        sim.packets = sim.packets.filter((p) => p.removeAt !== null || !p.done);
+      }
+
+      function tick(realTs) {
+        if (!sim.running) return;
+        if (!sim.lastRealTs) sim.lastRealTs = realTs;
+        const dtReal = realTs - sim.lastRealTs;
+        sim.lastRealTs = realTs;
+        if (!sim.paused) {
+          sim.stepDtMs = dtReal * speedValue();
+          sim.clock += sim.stepDtMs;
+          processEvents();
+          processRto();
+          processPersist();
+          processKeepAlive();
+          trySendDataBurst();
+          animatePackets();
+          deriveIntentions();
+          updateBars();
+          updateStatus();
+        }
+        requestAnimationFrame(tick);
+      }
+
+      function startRun() {
+        resetState();
+        sim.running = true;
+        sim.queueBytes = payloadSliderBytes();
+        sim.initialQueueBytes = sim.queueBytes;
+        sim.keepAliveState.lastDataAckClock = sim.clock;
+        updateBars();
+        updateStatus();
+        startHandshake(true);
+        requestAnimationFrame(tick);
+      }
+
+      function sendDataOnly() {
+        if (!sim.running) {
+          resetState();
+          sim.running = true;
+          requestAnimationFrame(tick);
+        }
+        if (sim.conn === "CLOSED") {
+          sim.queueBytes = payloadSliderBytes();
+          sim.initialQueueBytes = sim.queueBytes;
+          startHandshake(true);
+        } else if (sim.conn === "ESTABLISHED") {
+          if (sim.queueBytes === 0) {
+            sim.queueBytes = payloadSliderBytes();
+            sim.initialQueueBytes = sim.queueBytes;
+          }
+          trySendDataBurst();
+        }
+      }
+
+      function stepOnce(ms = 200) {
+        if (!sim.running) return;
+        if (!sim.paused) return;
+        sim.clock += ms;
+        processEvents();
+        processRto();
+        processPersist();
+        processKeepAlive();
+        trySendDataBurst();
+        animatePackets();
+        deriveIntentions();
+        updateBars();
+        updateStatus();
+      }
+
+      // -------------------- Event Wiring --------------------
+      [
+        ui.speed, ui.mtu, ui.payload, ui.mss, ui.rwnd, ui.senderBufCap, ui.receiverBufCap, ui.initCwnd, ui.ssthresh,
+        ui.lossProb,
+        ui.optMSS, ui.optSACK, ui.optWS, ui.optTS, ui.ipver,
+        ui.showEth, ui.showIp, ui.showTcp
+      ].forEach((el) => el.addEventListener("input", () => {
+        updateDerivedUi();
+        updateBars();
+        updateStatus();
+      }));
+
+      ui.btnStart.addEventListener("click", () => startRun());
+      ui.btnPause.addEventListener("click", () => {
+        if (!sim.running) return;
+        sim.paused = !sim.paused;
+        ui.btnPause.textContent = sim.paused ? "Resume" : "Pause";
+      });
+      ui.btnReset.addEventListener("click", () => resetState());
+      ui.btnHandshake.addEventListener("click", () => {
+        if (!sim.running) {
+          resetState();
+          sim.running = true;
+          requestAnimationFrame(tick);
+        }
+        startHandshake(false);
+      });
+      ui.btnData.addEventListener("click", () => sendDataOnly());
+      ui.btnClose.addEventListener("click", () => startClose());
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === " ") {
+          e.preventDefault();
+          if (!sim.running) return;
+          sim.paused = !sim.paused;
+          ui.btnPause.textContent = sim.paused ? "Resume" : "Pause";
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          stepOnce(300);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          stepOnce(100);
+        } else if (e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          const next = clamp(speedValue() + 0.25, 0.25, 4);
+          ui.speed.value = next.toFixed(2);
+          updateDerivedUi();
+        } else if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          const next = clamp(speedValue() - 0.25, 0.25, 4);
+          ui.speed.value = next.toFixed(2);
+          updateDerivedUi();
+        }
+      });
+
+      // -------------------- Init --------------------
+      resetState();
+      updateDerivedUi();
+      applyTooltips();
+      deriveIntentions();
+    </script>
+  </body>
+</html>
