@@ -366,9 +366,11 @@
 
         <div class="hud">
           <h3>Simulation HUD</h3>
-          <div class="line tiny">1x speed: 5s one-way, 5s ACK return, RTT 10s</div>
-          <div class="line tiny">Pacing uses min(cwnd,rwnd) and RTT-derived flight limit</div>
-          <div class="line tiny">In-flight PDU: Ethernet + IP + TCP + payload (proportional sizing)</div>
+          <div id="hudTiming" class="line tiny"></div>
+          <div id="hudPacing" class="line tiny"></div>
+          <div id="hudModel" class="line tiny"></div>
+          <div id="hudConn" class="line tiny"></div>
+          <div id="hudBuffers" class="line tiny"></div>
           <div id="hudMsg" class="line mono">Ready</div>
         </div>
 
@@ -376,7 +378,7 @@
           <summary>Show checksum math</summary>
           <div id="mathPanel"></div>
         </details>
-        <details class="eventlog">
+        <details class="eventlog" open>
           <summary>Event log</summary>
           <div id="eventLogPanel" class="mono"></div>
         </details>
@@ -462,6 +464,11 @@
         scene: document.getElementById("scene"),
         packetLayer: document.getElementById("packetLayer"),
         hudMsg: document.getElementById("hudMsg"),
+        hudTiming: document.getElementById("hudTiming"),
+        hudPacing: document.getElementById("hudPacing"),
+        hudModel: document.getElementById("hudModel"),
+        hudConn: document.getElementById("hudConn"),
+        hudBuffers: document.getElementById("hudBuffers"),
         mathPanel: document.getElementById("mathPanel"),
         speed: document.getElementById("speed"),
         speedOut: document.getElementById("speedOut"),
@@ -1033,6 +1040,7 @@
         updateDerivedUi();
         updateBars();
         updateStatus();
+        updateHudInfo();
       }
 
       function updateDerivedUi() {
@@ -1139,6 +1147,25 @@
         ui.scoreboard.textContent = sim.scoreboard.length
           ? sim.scoreboard.map((b) => `[${b.left}, ${b.right})`).join("\n")
           : "(empty)";
+      }
+
+      function updateHudInfo() {
+        const speed = speedValue();
+        const oneWayRealSec = sim.oneWayMs / Math.max(0.01, speed) / 1000;
+        const rttRealSec = (sim.baseRttMs / Math.max(0.01, speed)) / 1000;
+        const eff = effectiveMss();
+        const flight = flightBytes();
+        const cwndBytes = sim.sender.cwndMss * eff;
+        const sendBudget = Math.max(0, Math.min(cwndBytes, sim.receiver.wnd) - flight);
+        const senderBufUsed = senderBufferOccupancyBytes();
+        const receiverBufUsed = receiverBufferOccupancyBytes();
+        const faultCount = sim.faults.drop.size + sim.faults.reorder.size + sim.faults.dup.size + sim.faults.corrupt.size;
+
+        ui.hudTiming.textContent = `Speed ${speed.toFixed(2).replace(/\.00$/, "")}x | one-way ${oneWayRealSec.toFixed(2)}s | RTT ${rttRealSec.toFixed(2)}s`;
+        ui.hudPacing.textContent = `Pacing: cwnd=${bytesFmt(Math.round(cwndBytes))} rwnd=${bytesFmt(sim.receiver.wnd)} flight=${bytesFmt(flight)} budget=${bytesFmt(Math.round(sendBudget))}`;
+        ui.hudModel.textContent = `Model: ${ui.ipver.value === "v4" ? "IPv4" : "IPv6"} MTU=${mtuValue()} MSS=${parseInt(ui.mss.value, 10) || 0} effMSS=${eff} lossProb=${lossProbValue().toFixed(0)}%`;
+        ui.hudConn.textContent = `Conn=${sim.conn} queue=${bytesFmt(sim.queueBytes)} acked=${bytesFmt(sim.ackedBytes)} dupACK=${sim.sender.dupAcks} FR=${sim.sender.inFastRecovery ? "on" : "off"}`;
+        ui.hudBuffers.textContent = `Buffers: sender ${bytesFmt(senderBufUsed)}/${bytesFmt(senderBufCapValue())} receiver ${bytesFmt(receiverBufUsed)}/${bytesFmt(receiverBufCapValue())} faults=${faultCount}`;
       }
 
       function scheduleEvent(delayMs, fn) {
@@ -1755,6 +1782,7 @@
           deriveIntentions();
           updateBars();
           updateStatus();
+          updateHudInfo();
         }
         requestAnimationFrame(tick);
       }
@@ -1767,6 +1795,7 @@
         sim.keepAliveState.lastDataAckClock = sim.clock;
         updateBars();
         updateStatus();
+        updateHudInfo();
         startHandshake(true);
         requestAnimationFrame(tick);
       }
@@ -1803,6 +1832,7 @@
         deriveIntentions();
         updateBars();
         updateStatus();
+        updateHudInfo();
       }
 
       // -------------------- Event Wiring --------------------
@@ -1815,6 +1845,7 @@
         updateDerivedUi();
         updateBars();
         updateStatus();
+        updateHudInfo();
       }));
 
       ui.btnStart.addEventListener("click", () => startRun());
@@ -1865,6 +1896,7 @@
       updateDerivedUi();
       applyTooltips();
       deriveIntentions();
+      updateHudInfo();
     </script>
   </body>
 </html>
